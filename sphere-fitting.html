@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>最小二乗法で「球」を当てはめよう ― 高校生のための学習教材</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --ink: #1f2430;
+    --muted: #5b6475;
+    --line: #e2e5ee;
+    --accent: #2f6fed;
+    --accent-soft: #e8f0ff;
+    --green: #1f9d6b;
+    --green-soft: #e3f6ee;
+    --orange: #d9822b;
+    --orange-soft: #fdf1e3;
+    --red: #d64545;
+    --red-soft: #fdeaea;
+    --purple: #7a4fd6;
+    --purple-soft: #f0eafd;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif;
+    line-height: 1.85;
+    font-size: 16.5px;
+  }
+  header.hero {
+    background: linear-gradient(135deg, #1d3f8f 0%, #2f6fed 60%, #5aa2ff 100%);
+    color: #fff;
+    padding: 56px 20px 48px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+  .hero h1 { font-size: clamp(26px, 4.5vw, 38px); line-height: 1.35; margin: 0 0 12px; }
+  .hero p.lead { font-size: 17px; opacity: .95; margin: 0 0 20px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: 3px 12px; font-size: 13.5px; }
+  .source { font-size: 13.5px; opacity: .85; margin-top: 18px; }
+  .source a { color: #fff; }
+
+  nav.toc { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; }
+  nav.toc .wrap { display: flex; gap: 6px; overflow-x: auto; padding-top: 10px; padding-bottom: 10px; }
+  nav.toc a { white-space: nowrap; text-decoration: none; color: var(--muted); font-size: 13.5px; padding: 4px 10px; border-radius: 6px; }
+  nav.toc a:hover { background: var(--accent-soft); color: var(--accent); }
+
+  main { padding: 28px 0 60px; }
+  section.card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 28px 28px 24px; margin: 0 0 24px;
+  }
+  @media (max-width: 600px) { section.card { padding: 22px 16px 18px; } }
+  .step-label { display: inline-block; font-size: 12.5px; font-weight: 700; letter-spacing: .06em; color: var(--accent); background: var(--accent-soft); padding: 2px 10px; border-radius: 6px; margin-bottom: 6px; }
+  h2 { font-size: 24px; margin: 4px 0 14px; line-height: 1.4; }
+  h3 { font-size: 18px; margin: 22px 0 8px; }
+  p { margin: 10px 0; }
+  .math-block { overflow-x: auto; padding: 4px 0; }
+
+  .box { border-radius: 10px; padding: 14px 18px; margin: 16px 0; border-left: 5px solid; }
+  .box .title { font-weight: 700; margin-bottom: 4px; }
+  .box.key { background: var(--accent-soft); border-color: var(--accent); }
+  .box.tip { background: var(--green-soft); border-color: var(--green); }
+  .box.warn { background: var(--orange-soft); border-color: var(--orange); }
+  .box.hs { background: var(--purple-soft); border-color: var(--purple); }
+  .box p:first-child, .box ul:first-child { margin-top: 0; }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+  details.think { border: 1px dashed #b9c3d8; border-radius: 10px; padding: 10px 16px; margin: 16px 0; background: #fbfcff; }
+  details.think summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+  details.think[open] summary { margin-bottom: 8px; }
+
+  table.simple { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+  table.simple th, table.simple td { border: 1px solid var(--line); padding: 8px 10px; vertical-align: top; text-align: left; }
+  table.simple th { background: #f1f3f8; }
+
+  /* demos */
+  .demo { border: 1px solid var(--line); border-radius: 12px; background: #fcfdff; padding: 16px; margin: 18px 0; }
+  .demo h4 { margin: 0 0 6px; font-size: 16px; }
+  .demo .hint { font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+  .demo canvas { width: 100%; display: block; border-radius: 8px; background: #fff; border: 1px solid var(--line); touch-action: none; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 18px; margin-top: 12px; }
+  .controls label { font-size: 14px; color: var(--muted); display: block; }
+  .controls label b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .controls input[type=range] { width: 100%; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  button { font: inherit; font-size: 14.5px; border: 1px solid var(--accent); background: #fff; color: var(--accent); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; }
+  button:hover { filter: brightness(.95); }
+  button:disabled { opacity: .45; cursor: default; }
+  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+  .stat { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .stat .k { font-size: 12.5px; color: var(--muted); }
+  .stat .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .good { color: var(--green); }
+  .bad { color: var(--red); }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13.5px; color: var(--muted); margin-top: 8px; }
+  .legend > span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+
+  .meter { height: 12px; background: #eef1f7; border-radius: 6px; overflow: hidden; margin-top: 6px; }
+  .meter > div { height: 100%; background: var(--green); width: 0; transition: width .15s; }
+
+  /* matrix stepper */
+  .mat-wrap { overflow-x: auto; }
+  table.mat { border-collapse: collapse; margin: 10px auto; font-variant-numeric: tabular-nums; font-size: 16px; }
+  table.mat td { padding: 6px 12px; text-align: center; min-width: 54px; border-radius: 6px; transition: background .2s; }
+  table.mat td.sep { border-left: 2px solid #9aa6bf; }
+  table.mat tr td:first-child { border-left: 2px solid var(--ink); }
+  table.mat tr td:last-child { border-right: 2px solid var(--ink); }
+  table.mat td.pivot { background: #ffe9a8; font-weight: 700; }
+  table.mat tr.active td { background: var(--accent-soft); }
+  table.mat tr.active td.pivot { background: #ffe9a8; }
+  .mat-caption { display: flex; justify-content: center; gap: 80px; font-size: 13px; color: var(--muted); }
+  .step-desc { min-height: 3.4em; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 8px; }
+
+  /* code */
+  pre.code { background: #1e2433; color: #e6e9f0; border-radius: 10px; padding: 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.6; }
+  pre.code .c { color: #8a96ad; }
+  pre.code .hl { background: rgba(255, 214, 102, .18); display: inline-block; width: 100%; }
+  pre.code .err { background: rgba(214, 69, 69, .35); display: inline-block; width: 100%; }
+  code.inline { background: #eef1f7; padding: 1px 6px; border-radius: 4px; font-size: .92em; }
+
+  /* quiz */
+  .q { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+  .q .qt { font-weight: 700; margin-bottom: 8px; }
+  .q .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .q .opts button { border-color: #c4cbe0; color: var(--ink); }
+  .q .opts button.correct { background: var(--green); border-color: var(--green); color: #fff; }
+  .q .opts button.wrong { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+  .q .fb { margin-top: 8px; font-size: 15px; display: none; }
+  #score { font-weight: 700; }
+
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; counter-reset: f; }
+  .flow div { background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; font-size: 14.5px; position: relative; }
+  .flow div::before { counter-increment: f; content: counter(f); display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; text-align: center; line-height: 22px; font-size: 12.5px; font-weight: 700; margin-right: 6px; }
+
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 20px; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>最小二乗法で「球」を当てはめよう</h1>
+    <p class="lead">ばらばらに散らばった点から「いちばんよく合う球」の中心と半径を計算で求める方法を、高校数学の知識をもとに一歩ずつ学びます。</p>
+    <div class="chips">
+      <span class="chip">前提：2次関数・微分</span>
+      <span class="chip">前提：円の方程式</span>
+      <span class="chip">前提：連立方程式</span>
+      <span class="chip">新しく学ぶ：偏微分・行列</span>
+      <span class="chip">目安：60分</span>
+    </div>
+    <p class="source">元記事：<a href="https://qiita.com/yujikaneko/items/955b4474772802b055bc" target="_blank" rel="noopener">「最小二乗法による球の推定」（yujikaneko さん / Qiita）</a>の解説教材です。</p>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap">
+    <a href="#s1">1. 何がしたい？</a>
+    <a href="#s2">2. 球の方程式</a>
+    <a href="#s3">3. ズレの測り方</a>
+    <a href="#s4">4. 置き換えの工夫</a>
+    <a href="#s5">5. 微分＝0</a>
+    <a href="#s6">6. 行列にまとめる</a>
+    <a href="#s7">7. 掃き出し法</a>
+    <a href="#s8">8. C言語の実装</a>
+    <a href="#s9">9. 注意点</a>
+    <a href="#s10">まとめ・クイズ</a>
+  </div>
+</nav>
+
+<main>
+<div class="wrap">
+
+<section class="card">
+  <span class="step-label">この教材のゴール</span>
+  <h2>読み終えたらできるようになること</h2>
+  <ul>
+    <li>「最小二乗法」が何を最小にしているのか説明できる</li>
+    <li>球の当てはめが <strong>連立1次方程式</strong> に帰着する理由がわかる</li>
+    <li>掃き出し法で逆行列を求める手順をたどれる</li>
+    <li>スマホのコンパス補正にこの計算が使われる理由がわかる</li>
+  </ul>
+  <p>全体の流れは次のとおりです。</p>
+  <div class="flow">
+    <div>ズレを式にする</div>
+    <div>2乗して合計（$J$）</div>
+    <div>文字を置き換える</div>
+    <div>微分して＝0</div>
+    <div>行列で解く</div>
+    <div>中心と半径に戻す</div>
+  </div>
+</section>
+
+<!-- ============ 1 ============ -->
+<section class="card" id="s1">
+  <span class="step-label">STEP 1</span>
+  <h2>何がしたいの？ ― スマホのコンパスの話</h2>
+  <p>スマホには、地球の磁気（地磁気）を測る<strong>磁気センサ</strong>が入っています。センサは磁気の向きと強さを $(x,\,y,\,z)$ の3つの数値で出力します。</p>
+  <p>地磁気の強さはその場所でほぼ一定です。だから、スマホをいろいろな向きに回しながら測ると、測定値の点は<strong>半径が一定の球面の上</strong>に並びます。</p>
+  <p>理想的には、その球の中心は原点 $(0,0,0)$ のはずです。ところが実際は、スマホ内部のスピーカーや金属部品が出す磁気のせいで、<strong>球の中心が原点からずれます</strong>。このずれを「<strong>オフセット</strong>」と呼びます。</p>
+
+  <div class="box key">
+    <div class="title">やりたいこと</div>
+    <p>測定した点の集まりから<strong>球の中心（＝オフセット）と半径</strong>を求めます。オフセットがわかれば、測定値から引き算して正しい方位を出せます。</p>
+  </div>
+
+  <div class="demo">
+    <h4>体験：磁気センサの測定データ（3D）</h4>
+    <p class="hint">ドラッグで回転できます。灰色の十字が原点、<span style="color:#d64545">赤</span>が推定した球の中心です。スライダーでオフセットや測定誤差を変えてみましょう。</p>
+    <canvas id="c3d" width="820" height="460"></canvas>
+    <div class="legend">
+      <span style="--c:#2f6fed">測定点</span>
+      <span style="--c:#d64545">推定した球と中心</span>
+      <span style="--c:#9aa3b5">原点と座標軸</span>
+    </div>
+    <div class="controls">
+      <label>オフセット x：<b id="ox-v"></b> µT<input type="range" id="ox" min="-60" max="60" step="1" value="25"></label>
+      <label>オフセット y：<b id="oy-v"></b> µT<input type="range" id="oy" min="-60" max="60" step="1" value="-15"></label>
+      <label>オフセット z：<b id="oz-v"></b> µT<input type="range" id="oz" min="-60" max="60" step="1" value="10"></label>
+      <label>測定誤差（ノイズ）：<b id="ns-v"></b> µT<input type="range" id="ns" min="0" max="10" step="0.5" value="2"></label>
+      <label>点の数：<b id="np-v"></b> 個<input type="range" id="np" min="4" max="400" step="1" value="150"></label>
+      <label>スマホの回し方：
+        <select id="mode" style="font:inherit;font-size:14px;width:100%;margin-top:4px">
+          <option value="all">いろいろな向きに回す（8の字）</option>
+          <option value="flat">机の上で水平に回すだけ</option>
+        </select>
+      </label>
+    </div>
+    <div class="btns">
+      <button class="primary" id="regen">データを測り直す</button>
+      <button id="spin">自動回転：ON</button>
+    </div>
+    <div class="readout">
+      <div class="stat"><div class="k">本当のオフセット（中心）</div><div class="v" id="true-c"></div></div>
+      <div class="stat"><div class="k">推定したオフセット（中心）</div><div class="v" id="est-c"></div></div>
+      <div class="stat"><div class="k">半径（本当 → 推定）</div><div class="v" id="est-r"></div></div>
+      <div class="stat"><div class="k">中心の推定誤差</div><div class="v" id="est-err"></div></div>
+    </div>
+  </div>
+  <p>ノイズがあっても、点がたくさんあれば中心をかなり正確に当てられることがわかります。「机の上で水平に回すだけ」を選ぶとどうなるかは、<a href="#s9">STEP 9</a> で考えます。</p>
+  <div class="box tip">
+    <div class="title">身近な例</div>
+    <p>地図アプリで「スマホを8の字に動かしてください」と表示されることがあります。あれはまさに、この計算のためのデータを集めているのです。</p>
+  </div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section class="card" id="s2">
+  <span class="step-label">STEP 2</span>
+  <h2>球の方程式</h2>
+  <p>数学IIで習った<strong>円の方程式</strong>を思い出しましょう。中心 $(a,\,b)$、半径 $r$ の円は次の式で表されます。</p>
+  <div class="math-block">$$(x-a)^2 + (y-b)^2 = r^2$$</div>
+  <p>これは「点 $(x,y)$ と中心の距離が $r$ である」という意味でした（三平方の定理）。3次元でも同じように考えると、中心 $(x_0,\,y_0,\,z_0)$、半径 $r$ の<strong>球面</strong>は次の式になります。</p>
+  <div class="math-block">$$(x-x_0)^2 + (y-y_0)^2 + (z-z_0)^2 = r^2$$</div>
+  <p>求めたい未知数は $x_0,\ y_0,\ z_0,\ r$ の<strong>4つ</strong>です。</p>
+  <details class="think">
+    <summary>考えてみよう：中心 $(1,\,-2,\,3)$、半径 $2$ の球の方程式は？</summary>
+    <p>$(x-1)^2 + (y+2)^2 + (z-3)^2 = 4$ です。$y-(-2)=y+2$ になる点と、右辺が $r^2=4$ になる点に注意しましょう。</p>
+  </details>
+</section>
+
+<!-- ============ 3 ============ -->
+<section class="card" id="s3">
+  <span class="step-label">STEP 3</span>
+  <h2>「ズレ」を数で表す ― 最小二乗法の考え方</h2>
+  <p>測定した点を $(x_1,y_1,z_1),\ (x_2,y_2,z_2),\ \dots,\ (x_n,y_n,z_n)$ とします（全部で $n$ 個）。$k$ 番目の点を球の方程式の左辺に入れて、右辺の $r^2$ を引いた値を $e_k$ とします。</p>
+  <div class="math-block">$$e_k = (x_k-x_0)^2 + (y_k-y_0)^2 + (z_k-z_0)^2 - r^2$$</div>
+  <table class="simple">
+    <tr><th>点の位置</th><th>$e_k$ の値</th></tr>
+    <tr><td>ちょうど球面の上</td><td>$0$</td></tr>
+    <tr><td>球の外側</td><td>プラス</td></tr>
+    <tr><td>球の内側</td><td>マイナス</td></tr>
+  </table>
+  <p>$e_k$ は「その点が球からどれだけずれているか」を表す数です。でも、ただ足し合わせるとプラスとマイナスが打ち消し合ってしまいます。そこで<strong>2乗してから全部足します</strong>。</p>
+  <div class="math-block">$$J = \sum_{k=1}^{n} e_k^{\,2} = \sum_{k=1}^{n} \Bigl\{(x_k-x_0)^2 + (y_k-y_0)^2 + (z_k-z_0)^2 - r^2\Bigr\}^2$$</div>
+  <div class="box key">
+    <div class="title">最小二乗法</div>
+    <p>この $J$（<strong>目的関数</strong>といいます）がいちばん小さくなる $x_0,\,y_0,\,z_0,\,r$ を「いちばんよく合う球」とします。「2乗の和を最小にする」ので<strong>最小二乗法</strong>といいます。</p>
+  </div>
+  <div class="box hs">
+    <div class="title">$\Sigma$（シグマ）記号の復習</div>
+    <p>$\displaystyle\sum_{k=1}^{n} a_k = a_1 + a_2 + \cdots + a_n$ です（数学B「数列」）。以下では範囲を省略して $\Sigma a_k$ と書くことがあります。</p>
+  </div>
+
+  <div class="demo">
+    <h4>体験：自分の手で $J$ を最小にしてみよう（2次元版＝円）</h4>
+    <p class="hint">球は3次元で見にくいので、まず2次元の「円」で試します。考え方はまったく同じです。スライダーで円を動かして、$J$ をできるだけ小さくしてみましょう。キャンバスをクリックすると点を追加できます。</p>
+    <canvas id="c2d" width="820" height="440"></canvas>
+    <div class="legend">
+      <span style="--c:#d9822b">円の外側にある点のズレ（$e_k&gt;0$）</span>
+      <span style="--c:#7a4fd6">円の内側にある点のズレ（$e_k&lt;0$）</span>
+      <span style="--c:#1f9d6b">最小二乗法の答え（「答えを見る」で表示）</span>
+    </div>
+    <div class="controls">
+      <label>中心 a（x座標）：<b id="ma-v"></b><input type="range" id="ma" min="-10" max="10" step="0.05" value="0"></label>
+      <label>中心 b（y座標）：<b id="mb-v"></b><input type="range" id="mb" min="-6" max="6" step="0.05" value="0"></label>
+      <label>半径 r：<b id="mr-v"></b><input type="range" id="mr" min="0.5" max="9" step="0.05" value="3"></label>
+    </div>
+    <div class="btns">
+      <button class="primary" id="solve2d">答えを見る（最小二乗法で計算）</button>
+      <button id="rand2d">点をランダムに作り直す</button>
+      <button id="clear2d">点を全部消す</button>
+    </div>
+    <div class="readout">
+      <div class="stat"><div class="k">あなたの円の $J$</div><div class="v" id="j-you"></div></div>
+      <div class="stat"><div class="k">$J$ の最小値（目標）</div><div class="v" id="j-min"></div></div>
+      <div class="stat"><div class="k">達成度</div><div class="v" id="j-pct"></div><div class="meter"><div id="j-bar"></div></div></div>
+    </div>
+  </div>
+  <p>手で動かすと、3つのスライダーを行ったり来たりしてなかなか最小にたどり着けません。そこで、<strong>計算で一発で答えを出す方法</strong>をこれから学びます。</p>
+</section>
+
+<!-- ============ 4 ============ -->
+<section class="card" id="s4">
+  <span class="step-label">STEP 4</span>
+  <h2>式を変形する ― この方法のいちばんの工夫</h2>
+  <p>$J$ の中身の括弧を展開します。たとえば $(x_k-x_0)^2 = x_k^2 - 2x_0x_k + x_0^2$ です。$y,\,z$ も同じように展開して並べ替えると、次のようになります。</p>
+  <div class="math-block">$$J = \sum \Bigl\{ x_k^2+y_k^2+z_k^2 - 2x_0\,x_k - 2y_0\,y_k - 2z_0\,z_k + \bigl(x_0^2+y_0^2+z_0^2-r^2\bigr) \Bigr\}^2$$</div>
+  <p>ここで、未知数のかたまりを<strong>新しい文字に置き換えます</strong>。</p>
+  <div class="math-block">$$X_0 = 2x_0,\qquad Y_0 = 2y_0,\qquad Z_0 = 2z_0,\qquad R = r^2 - x_0^2 - y_0^2 - z_0^2$$</div>
+  <p>すると、式がすっきりします。</p>
+  <div class="math-block">$$J = \sum \Bigl\{ \underbrace{x_k^2+y_k^2+z_k^2}_{\text{データから計算できる数}} - X_0\,x_k - Y_0\,y_k - Z_0\,z_k - R \Bigr\}^2$$</div>
+  <div class="box key">
+    <div class="title">なぜ置き換えると嬉しいのか</div>
+    <p>新しい未知数 $R,\ X_0,\ Y_0,\ Z_0$ は、括弧の中に<strong>1次式</strong>（2乗や未知数どうしの掛け算がない形）で入っています。このおかげで、次のステップで出てくる方程式が<strong>ただの連立1次方程式</strong>になり、必ず計算で解けるようになります。</p>
+  </div>
+  <div class="box hs">
+    <div class="title">高校数学とのつながり</div>
+    <p>$x^4 - 5x^2 + 4 = 0$ を $t = x^2$ とおいて2次方程式にするのと同じ「置き換え」の発想です。難しい形を、知っている形に変えるのがコツです。</p>
+  </div>
+  <details class="think">
+    <summary>考えてみよう：$R,\,X_0,\,Y_0,\,Z_0$ が求まったら、元の中心と半径はどう戻す？</summary>
+    <p>$x_0 = \tfrac12 X_0,\ y_0 = \tfrac12 Y_0,\ z_0 = \tfrac12 Z_0$ です。半径は $R = r^2 - x_0^2 - y_0^2 - z_0^2$ を $r$ について解いて、$r = \sqrt{R + x_0^2 + y_0^2 + z_0^2}$ となります。</p>
+  </details>
+</section>
+
+<!-- ============ 5 ============ -->
+<section class="card" id="s5">
+  <span class="step-label">STEP 5</span>
+  <h2>いちばん小さい所では「微分が0」</h2>
+  <h3>1変数の場合の復習</h3>
+  <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">
+    <svg width="260" height="170" viewBox="0 0 260 170" aria-label="放物線の最小点で接線が水平になる図">
+      <line x1="20" y1="150" x2="250" y2="150" stroke="#9aa3b5"/>
+      <path d="M30,20 Q130,240 230,20" fill="none" stroke="#2f6fed" stroke-width="3"/>
+      <line x1="80" y1="85" x2="180" y2="85" stroke="#d64545" stroke-width="2.5"/>
+      <circle cx="130" cy="85" r="5" fill="#d64545"/>
+      <text x="138" y="78" font-size="13" fill="#d64545">傾き＝0</text>
+      <text x="200" y="40" font-size="13" fill="#2f6fed">y=f(x)</text>
+    </svg>
+    <div style="flex:1;min-width:240px">
+      <p>$f(x) = (x-3)^2 + 1$ の最小値は $x=3$ のときです。グラフの谷底では接線が水平なので、<strong>$f'(x)=0$</strong> になります。</p>
+      <p>実際、$f'(x) = 2(x-3)$ なので、$f'(x)=0$ を解くと $x=3$ が得られます。</p>
+    </div>
+  </div>
+
+  <h3>変数が4つある場合：偏微分</h3>
+  <p>$J$ は $R,\ X_0,\ Y_0,\ Z_0$ の4つの変数の関数です。谷底では、<strong>どの変数を動かしても傾きが0</strong>になっているはずです。</p>
+  <p>「<strong>ほかの変数は定数とみなして、1つの変数だけで微分する</strong>」ことを<strong>偏微分</strong>といい、$\dfrac{\partial J}{\partial R}$ のように書きます（$\partial$ は「ラウンド」や「デル」と読みます）。大学で習う記号ですが、やっていることは普通の微分と同じです。</p>
+  <div class="math-block">$$\frac{\partial J}{\partial R} = \frac{\partial J}{\partial X_0} = \frac{\partial J}{\partial Y_0} = \frac{\partial J}{\partial Z_0} = 0$$</div>
+
+  <h3>実際に微分してみる</h3>
+  <p>括弧の中身をまとめて $e_k$ と書きます。</p>
+  <div class="math-block">$$e_k = x_k^2+y_k^2+z_k^2 - X_0x_k - Y_0y_k - Z_0z_k - R,\qquad J = \sum e_k^{\,2}$$</div>
+  <p>合成関数の微分 $\bigl(e^2\bigr)' = 2e\cdot e'$ を使います（数学III）。</p>
+  <table class="simple">
+    <tr><th>どの変数で微分？</th><th>$e_k$ の微分</th><th>結果（＝0とおく）</th></tr>
+    <tr><td>$R$</td><td>$-1$</td><td>$-2\,\Sigma\, e_k = 0$</td></tr>
+    <tr><td>$X_0$</td><td>$-x_k$</td><td>$-2\,\Sigma\, x_k e_k = 0$</td></tr>
+    <tr><td>$Y_0$</td><td>$-y_k$</td><td>$-2\,\Sigma\, y_k e_k = 0$</td></tr>
+    <tr><td>$Z_0$</td><td>$-z_k$</td><td>$-2\,\Sigma\, z_k e_k = 0$</td></tr>
+  </table>
+  <p>たとえば1行目の $\Sigma e_k = 0$ を移項して整理すると、次の式になります（$R$ を $n$ 回足すので $\Sigma R = nR$）。</p>
+  <div class="math-block">$$\Sigma(x_k^2+y_k^2+z_k^2) = n\,R + \bigl(\Sigma x_k\bigr) X_0 + \bigl(\Sigma y_k\bigr) Y_0 + \bigl(\Sigma z_k\bigr) Z_0$$</div>
+  <div class="box key">
+    <div class="title">ここが大事</div>
+    <p>$\Sigma x_k$ や $\Sigma(x_k^2+y_k^2+z_k^2)$ は、<strong>測定データを足し算すれば求まる、ただの数</strong>です。だからこれは $R,\,X_0,\,Y_0,\,Z_0$ の<strong>1次方程式</strong>です。残り3つの式も同じ形になるので、<strong>未知数4つ・式4本の連立1次方程式</strong>ができあがります。</p>
+  </div>
+  <details class="think">
+    <summary>考えてみよう：2つ目の式（$X_0$ で微分したもの）を書き下すと？</summary>
+    <p>$\Sigma x_k e_k = 0$ を整理すると、次のようになります。</p>
+    <div class="math-block">$$\Sigma x_k(x_k^2+y_k^2+z_k^2) = \bigl(\Sigma x_k\bigr)R + \bigl(\Sigma x_k^2\bigr)X_0 + \bigl(\Sigma x_ky_k\bigr)Y_0 + \bigl(\Sigma x_kz_k\bigr)Z_0$$</div>
+  </details>
+</section>
+
+<!-- ============ 6 ============ -->
+<section class="card" id="s6">
+  <span class="step-label">STEP 6</span>
+  <h2>行列で連立方程式をまとめる</h2>
+  <h3>行列って何？（はじめての人へ）</h3>
+  <p>行列は「連立方程式の係数を表にしたもの」と考えればOKです。たとえば次の連立方程式があるとします。</p>
+  <div class="math-block">$$\begin{cases} 2a + 3b = 8 \\ \phantom{2}a - \phantom{3}b = -1 \end{cases}
+  \quad\Longleftrightarrow\quad
+  \begin{pmatrix} 8 \\ -1 \end{pmatrix} = \begin{pmatrix} 2 & 3 \\ 1 & -1 \end{pmatrix}\begin{pmatrix} a \\ b \end{pmatrix}$$</div>
+  <p>右辺の計算ルールは「<strong>行列の横の行</strong>と<strong>縦のベクトル</strong>の、対応するもの同士を掛けて足す」です。1行目なら $2\times a + 3\times b$ になります。</p>
+
+  <h3>球の場合の4本の式</h3>
+  <p>STEP 5 の4本の式を、同じようにまとめると次のようになります。</p>
+  <div class="math-block">$$
+  \underbrace{\begin{pmatrix}
+  \Sigma (x_k^2+y_k^2+z_k^2) \\
+  \Sigma x_k (x_k^2+y_k^2+z_k^2) \\
+  \Sigma y_k (x_k^2+y_k^2+z_k^2) \\
+  \Sigma z_k (x_k^2+y_k^2+z_k^2)
+  \end{pmatrix}}_{\vec b}
+  =
+  \underbrace{\begin{pmatrix}
+  n & \Sigma x_k & \Sigma y_k & \Sigma z_k \\
+  \Sigma x_k & \Sigma x_k^2 & \Sigma x_k y_k & \Sigma x_k z_k \\
+  \Sigma y_k & \Sigma x_k y_k & \Sigma y_k^2 & \Sigma y_k z_k \\
+  \Sigma z_k & \Sigma x_k z_k & \Sigma y_k z_k & \Sigma z_k^2
+  \end{pmatrix}}_{A}
+  \begin{pmatrix} R \\ X_0 \\ Y_0 \\ Z_0 \end{pmatrix}
+  $$</div>
+  <div class="box tip">
+    <div class="title">気づいたかな？ ― 対称行列</div>
+    <p>行列 $A$ は、左上から右下への対角線で折り返すと同じ形になっています。このような行列を<strong>対称行列</strong>といいます。プログラムではこの性質を使って、計算を約半分に減らしています。</p>
+  </div>
+
+  <h3>逆行列で解く</h3>
+  <p>$3x = 6$ は両辺に $\tfrac13$ を掛けて解けます。行列でも同じで、$A$ の<strong>逆行列</strong> $A^{-1}$（掛けると「1」にあたる単位行列になる行列）を両辺に掛ければ解けます。</p>
+  <div class="math-block">$$\vec b = A\vec u \quad\Longrightarrow\quad \vec u = A^{-1}\vec b,\qquad \vec u = \begin{pmatrix} R \\ X_0 \\ Y_0 \\ Z_0 \end{pmatrix}$$</div>
+  <p>あとは STEP 4 の式で元に戻せば、<strong>球の中心と半径</strong>が求まります。</p>
+  <div class="math-block">$$x_0 = \tfrac12 X_0,\quad y_0 = \tfrac12 Y_0,\quad z_0 = \tfrac12 Z_0,\quad r = \sqrt{R + x_0^2 + y_0^2 + z_0^2}$$</div>
+  <div class="box warn">
+    <div class="title">注意：逆行列はいつでもあるとは限らない</div>
+    <p>$0$ に逆数がないように、行列にも逆行列が存在しない場合があります。これがどんなときに起きるかは <a href="#s9">STEP 9</a> で扱います。</p>
+  </div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section class="card" id="s7">
+  <span class="step-label">STEP 7</span>
+  <h2>掃き出し法で逆行列を求める</h2>
+  <p>元記事のプログラムは、<strong>掃き出し法</strong>（ガウス・ジョルダンの消去法）で逆行列を求めています。中身は、連立方程式の<strong>加減法</strong>（式を何倍かして引き、文字を消していく方法）を機械的にくり返すだけです。</p>
+  <ol>
+    <li>行列 $A$ の右に、単位行列（対角線が1、ほかは0）を並べます。</li>
+    <li>左側の対角成分（<span style="background:#ffe9a8;padding:0 4px;border-radius:4px">黄色</span>）が 1 になるように、その行全体を割ります。</li>
+    <li>ほかの行から「その行の何倍か」を引いて、同じ列のほかの成分を 0 にします。</li>
+    <li>これを全部の列でくり返すと、左側が単位行列になります。このとき<strong>右側が逆行列</strong>になっています。</li>
+  </ol>
+  <div class="demo">
+    <h4>体験：3×3 の対称行列で掃き出し法を1手ずつ見る</h4>
+    <p class="hint">本物は 4×4 ですが、手順は同じです。「次へ」を押して進めましょう。分数で正確に計算しています。</p>
+    <div class="mat-caption"><span>左側：$A$ → 単位行列</span><span>右側：単位行列 → $A^{-1}$</span></div>
+    <div class="mat-wrap"><table class="mat" id="mat"></table></div>
+    <div class="step-desc" id="step-desc"></div>
+    <div class="btns">
+      <button id="st-prev">◀ 前へ</button>
+      <button class="primary" id="st-next">次へ ▶</button>
+      <button id="st-reset">最初から</button>
+      <span id="st-count" style="align-self:center;color:var(--muted);font-size:14px"></span>
+    </div>
+  </div>
+  <details class="think">
+    <summary>確かめてみよう：本当に逆行列になっている？</summary>
+    <p>最後に右側に出てくる行列を $A$ に掛けてみると、単位行列になります。たとえば1行目どうしなら $2\cdot\tfrac34 + 1\cdot(-\tfrac14) + 1\cdot(-\tfrac14) = \tfrac{6-1-1}{4} = 1$ です。</p>
+  </details>
+</section>
+
+<!-- ============ 8 ============ -->
+<section class="card" id="s8">
+  <span class="step-label">STEP 8</span>
+  <h2>C言語のプログラムを読む</h2>
+  <p>元記事の関数 <code class="inline">LSMSphere</code> は、ライブラリを使わず素のC言語でここまでの計算をしています。流れは4つのステップです。</p>
+  <table class="simple">
+    <tr><th style="width:9em">ステップ</th><th>やっていること</th><th style="width:8em">対応する STEP</th></tr>
+    <tr><td>① データ数の確認</td><td>点が4個未満なら失敗（<code class="inline">-1</code>）を返す。未知数が4つなので、式も最低4本（点が4個）必要。</td><td>STEP 2</td></tr>
+    <tr><td>② 合計を集める</td><td>全部の点をループして、$\Sigma x_k$ や $\Sigma x_k^2$ などを <code class="inline">mat</code>（行列 $A$）と <code class="inline">vec</code>（ベクトル $\vec b$）に足し込む。</td><td>STEP 5・6</td></tr>
+    <tr><td>③ 逆行列を作る</td><td>掃き出し法で <code class="inline">matinv</code>（$A^{-1}$）を求める。</td><td>STEP 7</td></tr>
+    <tr><td>④ 答えに戻す</td><td>$A^{-1}\vec b$ で $R, X_0, Y_0, Z_0$ を出し、中心と半径に戻す。</td><td>STEP 4・6</td></tr>
+  </table>
+
+  <h3>② 合計を集める部分</h3>
+<pre class="code"><span class="c">// 1点ずつ取り出して合計に足し込む</span>
+for (int i = 0; i &lt; pointListNum; i++)
+{
+    double mx = pointList[i].x;
+    double my = pointList[i].y;
+    double mz = pointList[i].z;
+
+<span class="hl">    mat[0][0] += 1;          <span class="c">// n（点の個数）</span></span>
+<span class="hl">    mat[0][1] += mx;         <span class="c">// Σx</span></span>
+    mat[0][2] += my;         <span class="c">// Σy</span>
+    mat[0][3] += mz;         <span class="c">// Σz</span>
+<span class="hl">    mat[1][1] += (mx * mx);  <span class="c">// Σx²</span></span>
+    mat[1][2] += (mx * my);  <span class="c">// Σxy</span>
+    mat[1][3] += (mx * mz);  <span class="c">// Σxz</span>
+    mat[2][2] += (my * my);  <span class="c">// Σy²</span>
+    mat[2][3] += (my * mz);  <span class="c">// Σyz</span>
+    mat[3][3] += (mz * mz);  <span class="c">// Σz²</span>
+
+<span class="hl">    double rho = (mx * mx) + (my * my) + (mz * mz);  <span class="c">// x²+y²+z²</span></span>
+    vec[0] += rho;           <span class="c">// Σ(x²+y²+z²)</span>
+    vec[1] += (rho * mx);    <span class="c">// Σx(x²+y²+z²)</span>
+    vec[2] += (rho * my);
+    vec[3] += (rho * mz);
+}
+<span class="c">// 対称行列なので、左下半分は右上半分をコピーするだけ</span>
+mat[1][0] = mat[0][1];
+mat[2][0] = mat[0][2];  mat[2][1] = mat[1][2];
+mat[3][0] = mat[0][3];  mat[3][1] = mat[1][3];  mat[3][2] = mat[2][3];</pre>
+  <p>行列の右上半分だけ計算して、最後にコピーしています。これが STEP 6 の「対称行列」の活用です。</p>
+
+  <h3>③ 掃き出し法の部分</h3>
+<pre class="code">for (int i = 0; i &lt; 4; i++)
+{
+<span class="hl">    tmp = 1 / mat[i][i];               <span class="c">// 対角成分の逆数</span></span>
+    for (int j = 0; j &lt; 4; j++)
+    {
+        mat[i][j]    *= tmp;           <span class="c">// i行目を割って、対角成分を1にする</span>
+        matinv[i][j] *= tmp;           <span class="c">// 右側（逆行列側）にも同じ操作</span>
+    }
+    for (int j = 0; j &lt; 4; j++)
+    {
+        if (i == j) continue;
+        tmp = mat[j][i];               <span class="c">// j行目の、消したい成分</span>
+        for (int k = 0; k &lt; 4; k++)
+        {
+            mat[j][k]    -= (mat[i][k] * tmp);     <span class="c">// i行目の tmp 倍を引く</span>
+            matinv[j][k] -= (matinv[i][k] * tmp);
+        }
+    }
+}</pre>
+  <p>STEP 7 のデモでやった操作が、そのままプログラムになっています。</p>
+
+  <h3>④ 答えに戻す部分</h3>
+<pre class="code"><span class="err">*Radius = sqrt(R + (X0 * X0 + Y0 * Y0 + Z0 * Z0) / 4.0);   <span class="c">// ← 要注意（下を参照）</span></span>
+Answer-&gt;x = X0 / 2.0;
+Answer-&gt;y = Y0 / 2.0;
+Answer-&gt;z = Z0 / 2.0;</pre>
+  <p>$X_0 = 2x_0$ なので $x_0^2 = X_0^2/4$ です。つまりこの行は $r=\sqrt{R+x_0^2+y_0^2+z_0^2}$ をそのまま計算しています。</p>
+  <div class="box warn">
+    <div class="title">コードの小さなミス</div>
+    <ul>
+      <li>関数の引数は <code class="inline">double *radius</code>（小文字）なのに、最後の行は <code class="inline">*Radius</code>（大文字）になっています。C言語は大文字と小文字を区別するので、このままではコンパイルエラーです。<code class="inline">*radius</code> に直すと動きます。</li>
+      <li><code class="inline">sqrt</code> を使うには <code class="inline">#include &lt;math.h&gt;</code> が必要です。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 9 ============ -->
+<section class="card" id="s9">
+  <span class="step-label">STEP 9</span>
+  <h2>注意点 ― うまくいかないのはどんなとき？</h2>
+  <h3>① 点が平面に偏っていると解けない</h3>
+  <p>STEP 1 のデモで「<strong>机の上で水平に回すだけ</strong>」を選んでみましょう。点がほぼ同じ高さ（一つの平面の上）に集まり、推定がうまくいかなくなります。</p>
+  <p>理由を考えます。平面上の点だけでは、その点を通る球は<strong>無数に</strong>あります。大きい球の上の方を通る場合もあれば、小さい球の真ん中を通る場合もあり、どれか一つに決まりません。このとき行列 $A$ の<strong>逆行列が存在しなくなり</strong>ます。ノイズで少しだけ平面からずれていると、計算はできても結果が大きく狂います。</p>
+  <div class="box tip">
+    <p>「8の字に回して」と言われるのは、点を球面全体に散らばらせて、この問題を避けるためでもあります。</p>
+  </div>
+
+  <h3>② プログラムが0で割ってしまう可能性</h3>
+  <p>元記事の掃き出し法は、対角成分 <code class="inline">mat[i][i]</code> が 0（またはほぼ0）になったときの対策をしていません。そうなると0で割ってしまいます。実用的なプログラムでは、絶対値の大きい行と入れ替える「<strong>ピボット選択</strong>」という工夫をよく使います（このページのデモではピボット選択をしています）。</p>
+
+  <h3>③ 「ズレ」の測り方は近似</h3>
+  <p>この方法で最小にしているのは、点と球面の<strong>本当の距離</strong>ではありません。最小にしているのは $e_k$（球の式に代入した値）です。中心からの距離を $d_k$ とすると $e_k = d_k^2 - r^2 = (d_k - r)(d_k + r)$ なので、$e_k$ は本当の距離のズレ $d_k - r$ のおよそ $2r$ 倍になります。</p>
+  <p>誤差が小さいうちはほぼ同じ答えになり、そのうえ<strong>連立1次方程式だけで確実に解ける</strong>のがこの方法の大きな利点です。本当の距離で最小化する方法もありますが、くり返し計算（反復法）が必要になります。</p>
+</section>
+
+<!-- ============ 10 ============ -->
+<section class="card" id="s10">
+  <span class="step-label">まとめ</span>
+  <h2>今日学んだこと</h2>
+  <table class="simple">
+    <tr><th>ステップ</th><th>内容</th><th>使った高校数学</th></tr>
+    <tr><td>ズレを式にする</td><td>$e_k = (x_k-x_0)^2+\cdots-r^2$</td><td>円の方程式・三平方の定理</td></tr>
+    <tr><td>2乗して合計</td><td>$J = \Sigma e_k^2$ を最小にする（最小二乗法）</td><td>Σ記号</td></tr>
+    <tr><td>置き換え</td><td>$X_0=2x_0,\ R=r^2-x_0^2-\cdots$ で1次式に</td><td>置き換え・展開</td></tr>
+    <tr><td>微分＝0</td><td>4つの偏微分を0とおくと連立1次方程式になる</td><td>微分・合成関数の微分</td></tr>
+    <tr><td>行列で解く</td><td>$\vec u = A^{-1}\vec b$、掃き出し法</td><td>連立方程式の加減法</td></tr>
+    <tr><td>元に戻す</td><td>$x_0=\tfrac12X_0,\ r=\sqrt{R+x_0^2+y_0^2+z_0^2}$</td><td>式の変形</td></tr>
+  </table>
+
+  <h3>確認クイズ</h3>
+  <p>得点：<span id="score">0</span> / <span id="score-max">0</span></p>
+  <div id="quiz"></div>
+</section>
+
+</div>
+</main>
+
+<footer>
+  元記事：<a href="https://qiita.com/yujikaneko/items/955b4474772802b055bc" target="_blank" rel="noopener">最小二乗法による球の推定（yujikaneko さん / Qiita）</a>
+</footer>
+
+<script>
+/* ===================== 共通：最小二乗法による当てはめ ===================== */
+// points: [[x,y], ...] または [[x,y,z], ...]
+// 元記事と同じ式：A u = b,  u = (R, X0, Y0, Z0)
+function fitSphere(points) {
+  const dim = points[0] ? points[0].length : 0;
+  const m = dim + 1;
+  if (points.length < m) return null;
+  const A = Array.from({length: m}, () => new Array(m).fill(0));
+  const b = new Array(m).fill(0);
+  for (const p of points) {
+    const v = [1, ...p];
+    const rho = p.reduce((s, t) => s + t * t, 0);
+    for (let i = 0; i < m; i++) {
+      for (let j = 0; j < m; j++) A[i][j] += v[i] * v[j];
+      b[i] += rho * v[i];
+    }
+  }
+  const u = solve(A, b);
+  if (!u) return null;
+  const center = u.slice(1).map(t => t / 2);
+  const r2 = u[0] + center.reduce((s, t) => s + t * t, 0);
+  if (!(r2 > 0)) return null;
+  return {center, r: Math.sqrt(r2)};
+}
+// ピボット選択つきガウス・ジョルダン法
+function solve(A0, b0) {
+  const n = b0.length;
+  const M = A0.map((row, i) => [...row, b0[i]]);
+  let scale = 0;
+  for (const row of A0) for (const t of row) scale = Math.max(scale, Math.abs(t));
+  for (let i = 0; i < n; i++) {
+    let p = i;
+    for (let r = i + 1; r < n; r++) if (Math.abs(M[r][i]) > Math.abs(M[p][i])) p = r;
+    if (Math.abs(M[p][i]) < 1e-12 * (scale || 1)) return null;
+    [M[i], M[p]] = [M[p], M[i]];
+    const inv = 1 / M[i][i];
+    for (let k = i; k <= n; k++) M[i][k] *= inv;
+    for (let r = 0; r < n; r++) {
+      if (r === i) continue;
+      const f = M[r][i];
+      if (f === 0) continue;
+      for (let k = i; k <= n; k++) M[r][k] -= f * M[i][k];
+    }
+  }
+  return M.map(row => row[n]);
+}
+function gauss() { // 標準正規分布の乱数（ボックス＝ミュラー法）
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function setupCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  cv._ratio = cv._ratio || cv.height / cv.width;
+  const w = cv.getBoundingClientRect().width;
+  const H = w * cv._ratio;
+  const pw = Math.round(w * dpr), ph = Math.round(H * dpr);
+  if (cv.width !== pw || cv.height !== ph) { // サイズが変わったときだけ作り直す
+    cv.width = pw;
+    cv.height = ph;
+    cv.style.height = H + "px";
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return {ctx, w, h: H};
+}
+const fmt = (x, d = 1) => (Math.abs(x) < 0.5 * Math.pow(10, -d) ? 0 : x).toFixed(d);
+
+/* ===================== デモ1：3D 磁気センサ ===================== */
+(function () {
+  const cv = document.getElementById("c3d");
+  const TRUE_R = 46; // 日本付近の地磁気の強さ（約46µT）
+  let pts = [], fit = null, yaw = 0.6, pitch = 0.35, spinning = true, drag = null;
+  const $ = id => document.getElementById(id);
+  const ids = ["ox", "oy", "oz", "ns", "np"];
+
+  function gen() {
+    const off = [+$("ox").value, +$("oy").value, +$("oz").value];
+    const noise = +$("ns").value, n = +$("np").value, mode = $("mode").value;
+    pts = [];
+    for (let i = 0; i < n; i++) {
+      let d;
+      if (mode === "all") {
+        const z = 2 * Math.random() - 1, ph = 2 * Math.PI * Math.random(), s = Math.sqrt(1 - z * z);
+        d = [s * Math.cos(ph), s * Math.sin(ph), z];
+      } else {
+        const ph = 2 * Math.PI * Math.random(), el = 0.5 + 0.02 * gauss(); // 一定の傾きのまま水平に回す
+        d = [Math.cos(el) * Math.cos(ph), Math.cos(el) * Math.sin(ph), Math.sin(el)];
+      }
+      pts.push(d.map((t, k) => TRUE_R * t + off[k] + noise * gauss()));
+    }
+    fit = fitSphere(pts);
+    update(off);
+  }
+  function update(off) {
+    $("true-c").textContent = `(${off.map(t => fmt(t)).join(", ")})`;
+    if (fit) {
+      const err = Math.hypot(...fit.center.map((t, k) => t - off[k]));
+      $("est-c").textContent = `(${fit.center.map(t => fmt(t)).join(", ")})`;
+      $("est-r").textContent = `${TRUE_R.toFixed(1)} → ${fmt(fit.r)}`;
+      $("est-err").innerHTML = `<span class="${err < 3 ? "good" : "bad"}">${fmt(err, 2)} µT${err < 3 ? "（よく当たっている）" : "（大きくずれている）"}</span>`;
+    } else {
+      $("est-c").textContent = "解けません";
+      $("est-r").textContent = "—";
+      $("est-err").innerHTML = `<span class="bad">逆行列が存在しない</span>`;
+    }
+  }
+  function project(p, w, h) {
+    // 表示用に z 軸を上向きにして回転
+    const [x, y, z] = p;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const x1 = cy * x - sy * y, y1 = sy * x + cy * y;           // z 軸まわり
+    const depth = cp * y1 + sp * z, up = -sp * y1 + cp * z;   // 傾け
+    const s = Math.min(w, h) / 200, f = 600 / (600 + depth * 2);
+    return [w / 2 + x1 * s * f, h / 2 - up * s * f, depth];
+  }
+  function draw() {
+    const {ctx, w, h} = setupCanvas(cv);
+    ctx.clearRect(0, 0, w, h);
+    // 座標軸
+    const axes = [[[-110, 0, 0], [110, 0, 0], "x"], [[0, -110, 0], [0, 110, 0], "y"], [[0, 0, -110], [0, 0, 110], "z"]];
+    ctx.lineWidth = 1;
+    for (const [a, b, name] of axes) {
+      const pa = project(a, w, h), pb = project(b, w, h);
+      ctx.strokeStyle = "#c9cfdb"; ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
+      ctx.fillStyle = "#9aa3b5"; ctx.font = "13px sans-serif"; ctx.fillText(name, pb[0] + 4, pb[1] - 4);
+    }
+    const o = project([0, 0, 0], w, h);
+    ctx.strokeStyle = "#7d8699"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(o[0] - 7, o[1]); ctx.lineTo(o[0] + 7, o[1]); ctx.moveTo(o[0], o[1] - 7); ctx.lineTo(o[0], o[1] + 7); ctx.stroke();
+    ctx.fillStyle = "#7d8699"; ctx.font = "12px sans-serif"; ctx.fillText("原点", o[0] + 8, o[1] + 16);
+    // 推定した球（ワイヤーフレーム）
+    if (fit && fit.r < 400) {
+      const [cx, cy, cz] = fit.center, r = fit.r, seg = 60;
+      const lines = [];
+      for (let lat = -60; lat <= 60; lat += 30) {
+        const a = lat * Math.PI / 180, l = [];
+        for (let i = 0; i <= seg; i++) { const t = 2 * Math.PI * i / seg; l.push([cx + r * Math.cos(a) * Math.cos(t), cy + r * Math.cos(a) * Math.sin(t), cz + r * Math.sin(a)]); }
+        lines.push(l);
+      }
+      for (let lon = 0; lon < 180; lon += 30) {
+        const b = lon * Math.PI / 180, l = [];
+        for (let i = 0; i <= seg; i++) { const t = 2 * Math.PI * i / seg; l.push([cx + r * Math.cos(t) * Math.cos(b), cy + r * Math.cos(t) * Math.sin(b), cz + r * Math.sin(t)]); }
+        lines.push(l);
+      }
+      const cDepth = project(fit.center, w, h)[2];
+      for (const l of lines) {
+        for (let i = 0; i < l.length - 1; i++) {
+          const p = project(l[i], w, h), q = project(l[i + 1], w, h);
+          const front = (p[2] + q[2]) / 2 < cDepth;
+          ctx.strokeStyle = front ? "rgba(214,69,69,.55)" : "rgba(214,69,69,.15)";
+          ctx.lineWidth = front ? 1.3 : 1;
+          ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+        }
+      }
+    }
+    // 点（奥から順に描く）
+    const proj = pts.map(p => project(p, w, h)).sort((a, b) => b[2] - a[2]);
+    let dmin = Infinity, dmax = -Infinity;
+    for (const p of proj) { dmin = Math.min(dmin, p[2]); dmax = Math.max(dmax, p[2]); }
+    for (const p of proj) {
+      const t = dmax > dmin ? (p[2] - dmin) / (dmax - dmin) : 0.5; // 0=手前
+      ctx.fillStyle = `rgba(47,111,237,${0.95 - 0.6 * t})`;
+      ctx.beginPath(); ctx.arc(p[0], p[1], 3.6 - 1.4 * t, 0, 2 * Math.PI); ctx.fill();
+    }
+    if (fit && fit.r < 400) {
+      const c = project(fit.center, w, h);
+      ctx.fillStyle = "#d64545"; ctx.beginPath(); ctx.arc(c[0], c[1], 5, 0, 2 * Math.PI); ctx.fill();
+      ctx.strokeStyle = "#d64545"; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(o[0], o[1]); ctx.lineTo(c[0], c[1]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#d64545"; ctx.font = "bold 12px sans-serif"; ctx.fillText("推定した中心", c[0] + 8, c[1] - 8);
+    }
+  }
+  function loop() {
+    if (spinning && !drag) yaw += 0.006;
+    draw();
+    requestAnimationFrame(loop);
+  }
+  for (const id of ids) {
+    const el = $(id), out = $(id + "-v");
+    const show = () => { out.textContent = el.value; };
+    show();
+    el.addEventListener("input", () => { show(); gen(); });
+  }
+  $("mode").addEventListener("change", gen);
+  $("regen").addEventListener("click", gen);
+  $("spin").addEventListener("click", () => { spinning = !spinning; $("spin").textContent = "自動回転：" + (spinning ? "ON" : "OFF"); });
+  cv.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => {
+    if (!drag) return;
+    yaw += (e.clientX - drag[0]) * 0.01;
+    pitch = Math.max(-1.4, Math.min(1.4, pitch + (e.clientY - drag[1]) * 0.01));
+    drag = [e.clientX, e.clientY];
+  });
+  cv.addEventListener("pointerup", () => { drag = null; });
+  cv.addEventListener("pointercancel", () => { drag = null; });
+  gen();
+  loop();
+})();
+
+/* ===================== デモ2：2D 円で J を最小化 ===================== */
+(function () {
+  const cv = document.getElementById("c2d");
+  const $ = id => document.getElementById(id);
+  let pts = [], best = null, showBest = false, view = null;
+  const XR = 11; // x の表示範囲 ±XR
+
+  function toScreen(x, y) { return [view.w / 2 + x * view.s, view.h / 2 - y * view.s]; }
+  function toWorld(sx, sy) { return [(sx - view.w / 2) / view.s, -(sy - view.h / 2) / view.s]; }
+  function J(a, b, r) {
+    let s = 0;
+    for (const [x, y] of pts) { const e = (x - a) ** 2 + (y - b) ** 2 - r * r; s += e * e; }
+    return s;
+  }
+  function randomize() {
+    const a = (Math.random() * 2 - 1) * 4, b = (Math.random() * 2 - 1) * 1.5, r = 2.5 + Math.random() * 2.5;
+    const start = Math.random() * 2 * Math.PI, span = Math.PI * (1.1 + Math.random() * 0.9);
+    pts = [];
+    for (let i = 0; i < 18; i++) {
+      const t = start + span * Math.random(), rr = r + 0.35 * gauss();
+      pts.push([a + rr * Math.cos(t), b + rr * Math.sin(t)]);
+    }
+    showBest = false;
+    refresh();
+  }
+  function refresh() {
+    best = pts.length >= 3 ? fitSphere(pts) : null;
+    const a = +$("ma").value, b = +$("mb").value, r = +$("mr").value;
+    $("ma-v").textContent = a.toFixed(2); $("mb-v").textContent = b.toFixed(2); $("mr-v").textContent = r.toFixed(2);
+    const jy = J(a, b, r);
+    $("j-you").textContent = pts.length ? jy.toFixed(1) : "—";
+    if (best) {
+      const jm = J(best.center[0], best.center[1], best.r);
+      $("j-min").textContent = jm.toFixed(1);
+      const pct = Math.max(0, Math.min(100, 100 * (jm + 1) / (jy + 1)));
+      $("j-pct").innerHTML = `<span class="${pct > 97 ? "good" : ""}">${pct.toFixed(1)} %${pct > 97 ? "　ほぼ最小！" : ""}</span>`;
+      $("j-bar").style.width = pct + "%";
+    } else {
+      $("j-min").textContent = "点が3個以上必要";
+      $("j-pct").textContent = "—";
+      $("j-bar").style.width = "0";
+    }
+    draw();
+  }
+  function draw() {
+    const {ctx, w, h} = setupCanvas(cv);
+    view = {w, h, s: w / (2 * XR)};
+    ctx.clearRect(0, 0, w, h);
+    // 方眼
+    ctx.lineWidth = 1;
+    const yr = h / 2 / view.s;
+    for (let x = -Math.floor(XR); x <= XR; x++) {
+      const [sx] = toScreen(x, 0);
+      ctx.strokeStyle = x === 0 ? "#b7bfd0" : "#eef1f6";
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+    }
+    for (let y = -Math.floor(yr); y <= yr; y++) {
+      const [, sy] = toScreen(0, y);
+      ctx.strokeStyle = y === 0 ? "#b7bfd0" : "#eef1f6";
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+    }
+    const a = +$("ma").value, b = +$("mb").value, r = +$("mr").value;
+    // ズレの線（中心から点へ向かう方向で、円周から点まで）
+    for (const [x, y] of pts) {
+      const d = Math.hypot(x - a, y - b) || 1e-9;
+      const ex = a + (x - a) / d * r, ey = b + (y - b) / d * r;
+      const [p1x, p1y] = toScreen(x, y), [p2x, p2y] = toScreen(ex, ey);
+      ctx.strokeStyle = d > r ? "#d9822b" : "#7a4fd6"; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.moveTo(p1x, p1y); ctx.lineTo(p2x, p2y); ctx.stroke();
+    }
+    // 最小二乗法の答え
+    if (showBest && best) {
+      const [cx, cy] = toScreen(best.center[0], best.center[1]);
+      ctx.strokeStyle = "#1f9d6b"; ctx.lineWidth = 2.5; ctx.setLineDash([7, 5]);
+      ctx.beginPath(); ctx.arc(cx, cy, best.r * view.s, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#1f9d6b"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 2 * Math.PI); ctx.fill();
+    }
+    // あなたの円
+    const [sx, sy] = toScreen(a, b);
+    ctx.strokeStyle = "#2f6fed"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r * view.s, 0, 2 * Math.PI); ctx.stroke();
+    ctx.fillStyle = "#2f6fed"; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 2 * Math.PI); ctx.fill();
+    ctx.font = "12px sans-serif"; ctx.fillText("あなたの円", sx + 7, sy - 7);
+    // 点
+    for (const [x, y] of pts) {
+      const [px, py] = toScreen(x, y);
+      ctx.fillStyle = "#1f2430"; ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
+    }
+    if (!pts.length) {
+      ctx.fillStyle = "#5b6475"; ctx.font = "15px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("クリックして点を置いてください（3個以上）", w / 2, 30); ctx.textAlign = "start";
+    }
+  }
+  ["ma", "mb", "mr"].forEach(id => $(id).addEventListener("input", refresh));
+  cv.addEventListener("click", e => {
+    const rect = cv.getBoundingClientRect();
+    pts.push(toWorld(e.clientX - rect.left, e.clientY - rect.top));
+    refresh();
+  });
+  $("rand2d").addEventListener("click", randomize);
+  $("clear2d").addEventListener("click", () => { pts = []; showBest = false; refresh(); });
+  $("solve2d").addEventListener("click", () => {
+    if (!best) return;
+    showBest = true;
+    // スライダーを答えまでアニメーションさせる
+    const from = [+$("ma").value, +$("mb").value, +$("mr").value];
+    const to = [best.center[0], best.center[1], best.r];
+    const t0 = performance.now();
+    (function step(now) {
+      const t = Math.min(1, (now - t0) / 700), e = 1 - Math.pow(1 - t, 3);
+      ["ma", "mb", "mr"].forEach((id, k) => { $(id).value = from[k] + (to[k] - from[k]) * e; });
+      refresh();
+      if (t < 1) requestAnimationFrame(step);
+      else ["ma", "mb", "mr"].forEach((id, k) => { $(id).value = to[k]; });
+    })(t0);
+  });
+  window.addEventListener("resize", draw);
+  randomize();
+})();
+
+/* ===================== デモ3：掃き出し法ステッパー ===================== */
+(function () {
+  const gcd = (a, b) => { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a || 1; };
+  const F = (n, d = 1) => { if (d < 0) { n = -n; d = -d; } const g = gcd(n, d); return {n: n / g, d: d / g}; };
+  const sub = (a, b) => F(a.n * b.d - b.n * a.d, a.d * b.d);
+  const mul = (a, b) => F(a.n * b.n, a.d * b.d);
+  const div = (a, b) => F(a.n * b.d, a.d * b.n);
+  const isZero = a => a.n === 0, isOne = a => a.n === a.d;
+  const show = a => a.d === 1 ? String(a.n).replace("-", "−") : `${a.n < 0 ? "−" : ""}${Math.abs(a.n)}/${a.d}`;
+  const rowName = i => ["1", "2", "3"][i] + "行目";
+
+  const A = [[2, 1, 1], [1, 2, 1], [1, 1, 2]];
+  let M = A.map((row, i) => [...row.map(t => F(t)), ...[0, 1, 2].map(j => F(i === j ? 1 : 0))]);
+  const steps = [{M: M.map(r => r.slice()), desc: "スタート：左に行列 $A$、右に単位行列を並べました。目標は、左側を単位行列にすることです。", piv: null, row: null}];
+  for (let i = 0; i < 3; i++) {
+    const p = M[i][i];
+    if (!isOne(p)) {
+      M[i] = M[i].map(t => div(t, p));
+      steps.push({M: M.map(r => r.slice()), desc: `${rowName(i)}を全部 ${show(p)} で割って、対角成分（黄色）を 1 にしました。`, piv: [i, i], row: i});
+    }
+    for (let j = 0; j < 3; j++) {
+      if (j === i || isZero(M[j][i])) continue;
+      const f = M[j][i];
+      M[j] = M[j].map((t, k) => sub(t, mul(M[i][k], f)));
+      steps.push({M: M.map(r => r.slice()), desc: `${rowName(j)}から「${rowName(i)} × ${show(f)}」を引いて、${i + 1}列目の成分を 0 にしました。`, piv: [i, i], row: j});
+    }
+  }
+  steps.push({M: M.map(r => r.slice()), desc: "完成！ 左側が単位行列になりました。<strong>右側が逆行列 $A^{-1}$</strong> です。", piv: null, row: null, done: true});
+
+  let cur = 0;
+  const tbl = document.getElementById("mat"), desc = document.getElementById("step-desc");
+  function render() {
+    const s = steps[cur];
+    tbl.innerHTML = s.M.map((row, i) =>
+      `<tr class="${s.row === i ? "active" : ""}">` +
+      row.map((t, k) => `<td class="${k === 3 ? "sep " : ""}${s.piv && s.piv[0] === i && s.piv[1] === k ? "pivot" : ""}">${show(t)}</td>`).join("") +
+      "</tr>").join("");
+    desc.innerHTML = s.desc;
+    if (window.renderMathInElement) renderMathInElement(desc, katexOpts);
+    document.getElementById("st-count").textContent = `${cur + 1} / ${steps.length}`;
+    document.getElementById("st-prev").disabled = cur === 0;
+    document.getElementById("st-next").disabled = cur === steps.length - 1;
+  }
+  document.getElementById("st-next").addEventListener("click", () => { cur = Math.min(steps.length - 1, cur + 1); render(); });
+  document.getElementById("st-prev").addEventListener("click", () => { cur = Math.max(0, cur - 1); render(); });
+  document.getElementById("st-reset").addEventListener("click", () => { cur = 0; render(); });
+  window._renderStepper = render;
+  render();
+})();
+
+/* ===================== クイズ ===================== */
+(function () {
+  const Q = [
+    {q: "中心 $(1,\\,-2,\\,3)$、半径 $2$ の球の方程式はどれ？",
+     o: ["$(x-1)^2+(y-2)^2+(z-3)^2=2$", "$(x-1)^2+(y+2)^2+(z-3)^2=4$", "$(x+1)^2+(y-2)^2+(z+3)^2=4$"], a: 1,
+     e: "中心の座標を引き、右辺は半径の2乗です。$y-(-2) = y+2$ に注意しましょう。"},
+    {q: "測定した点が球の<strong>外側</strong>にあるとき、ズレ $e_k$ の符号は？",
+     o: ["プラス", "マイナス", "0"], a: 0,
+     e: "中心からの距離が $r$ より大きいので、$(\\text{距離})^2 - r^2 > 0$ になります。"},
+    {q: "ズレ $e_k$ を<strong>2乗してから</strong>足すのはなぜ？",
+     o: ["計算を速くするため", "プラスとマイナスが打ち消し合わないようにするため", "答えを整数にするため"], a: 1,
+     e: "そのまま足すと、外側のズレと内側のズレが打ち消し合って、合わない球でも合計が0に近くなってしまいます。"},
+    {q: "未知数 $R,\\,X_0,\\,Y_0,\\,Z_0$ を求めるには、最低何個の点が必要？",
+     o: ["2個", "3個", "4個"], a: 2,
+     e: "未知数が4つなので、式（点）も最低4つ必要です。元記事のプログラムも4個未満ならエラーを返します。"},
+    {q: "計算の結果 $X_0 = 6$ になりました。球の中心の $x$ 座標 $x_0$ は？",
+     o: ["$3$", "$6$", "$12$"], a: 0,
+     e: "$X_0 = 2x_0$ と置いたので、$x_0 = X_0 / 2 = 3$ です。"},
+    {q: "測定した点が<strong>全部同じ平面の上</strong>にあると、どうなる？",
+     o: ["より正確に求まる", "逆行列が存在せず、球が1つに決まらない", "半径が必ず0になる"], a: 1,
+     e: "平面上の点を通る球は無数にあるので、1つに決められません。だからスマホは「8の字」に回します。"},
+    {q: "最小値をとる点で $\\dfrac{\\partial J}{\\partial R}=0$ とおくのは、高校数学のどの考え方と同じ？",
+     o: ["2次関数の頂点では微分係数が0になる", "三角関数の加法定理", "確率の乗法定理"], a: 0,
+     e: "グラフの谷底では接線が水平、つまり微分が0です。変数が増えても同じ考え方を使います。"},
+  ];
+  const box = document.getElementById("quiz");
+  let score = 0;
+  document.getElementById("score-max").textContent = Q.length;
+  Q.forEach((item, qi) => {
+    const div = document.createElement("div");
+    div.className = "q";
+    div.innerHTML = `<div class="qt">Q${qi + 1}. ${item.q}</div><div class="opts">${item.o.map((t, i) => `<button data-i="${i}">${t}</button>`).join("")}</div><div class="fb"></div>`;
+    const fb = div.querySelector(".fb");
+    let answered = false;
+    div.querySelectorAll(".opts button").forEach(btn => btn.addEventListener("click", () => {
+      if (answered) return;
+      answered = true;
+      const i = +btn.dataset.i;
+      const ok = i === item.a;
+      if (ok) score++;
+      document.getElementById("score").textContent = score;
+      div.querySelectorAll(".opts button").forEach(b => { if (+b.dataset.i === item.a) b.classList.add("correct"); });
+      if (!ok) btn.classList.add("wrong");
+      fb.style.display = "block";
+      fb.innerHTML = `<strong class="${ok ? "good" : "bad"}">${ok ? "正解！" : "残念…"}</strong> ${item.e}`;
+      if (window.renderMathInElement) renderMathInElement(fb, katexOpts);
+    }));
+    box.appendChild(div);
+  });
+})();
+
+/* ===================== 数式の表示（KaTeX） ===================== */
+var katexOpts = {
+  delimiters: [
+    {left: "$$", right: "$$", display: true},
+    {left: "$", right: "$", display: false},
+  ],
+  throwOnError: false,
+};
+window.addEventListener("load", () => {
+  if (window.renderMathInElement) renderMathInElement(document.body, katexOpts);
+});
+</script>
+</body>
+</html>
