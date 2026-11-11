@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="340" viewBox="0 0 260 170">
+  <rect width="260" height="170" fill="#ffffff"/>
+  <line x1="20" y1="150" x2="250" y2="150" stroke="#9aa3b5"/>
+  <path d="M30,20 Q130,240 230,20" fill="none" stroke="#2f6fed" stroke-width="3"/>
+  <line x1="80" y1="85" x2="180" y2="85" stroke="#d64545" stroke-width="2.5"/>
+  <circle cx="130" cy="85" r="5" fill="#d64545"/>
+  <text x="138" y="76" font-size="13" fill="#d64545" font-family="sans-serif">傾き = 0</text>
+  <text x="196" y="40" font-size="13" fill="#2f6fed" font-family="sans-serif">y = f(x)</text>
+</svg>
