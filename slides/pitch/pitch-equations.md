@@ -112,7 +112,7 @@ style: |
 <div class="cols-l">
 <div>
 
-ボールの状態は**3つの矢印（ベクトル）**で表す
+ボールの状態は<strong>3つの矢印（ベクトル）</strong>で表す
 
 - 位置 $\mathbf s$
 - 速度 $\mathbf v$（大きさ $v$）
@@ -450,18 +450,17 @@ $$F_d=\tfrac12\,C_d\,\rho\,A\,v^2$$
 
 ![w:100%](img/forces_bar.png)
 
+<div class="small center">
+
+$F_d\approx1.71$ N は重力 $mg\approx1.42$ N より**大きい**
+
 </div>
 </div>
-
-<div class="box good">
-
-**数字で確認：** $F_d=\tfrac12\times0.423\times1.205\times0.00419\times40^2\approx1.71$ N。重力 $mg\approx1.42$ N より**大きい**
-
 </div>
 
 <div class="small">
 
-<span class="tag re">再考</span> 「速さ2倍で抵抗4倍」は $C_d$ が一定のときの話。この速さ付近では $C_d$ 自体が速さで変わる（前のスライド）。
+<span class="tag re">再考</span> 「速さ2倍で抵抗4倍」は $C_d$ が一定のときの話。この速さ付近では $C_d$ 自体が速さで変わる。
 
 </div>
 
@@ -757,11 +756,11 @@ $$\Delta w=\frac{k_1+2k_2+2k_3+k_4}{6}=\alpha_0\Delta t\left(1+\tfrac12\Delta t+
 
 ## シミュレーションで比べてみた
 
-![w:820](img/integrator_compare.png)
+![w:700](img/integrator_compare.png)
 
 <div class="small center">
 
-コードの「RK4」はオイラー法とほぼ同じ。本物の RK4 との差は本塁で約 1 mm。本物の RK4 は $\Delta t=0.01$ s にしても 0.05 mm しか変わらない。
+コードの「RK4」≒ オイラー法。本物の RK4 との差は本塁で約 1 mm（$\Delta t=0.01$ s でも 0.05 mm）
 
 </div>
 
@@ -827,17 +826,10 @@ $$\text{point}=\min\{\,i : s_y(i)>10\,\},\qquad \mathbf s_{\text{plate}}=\mathbf
 <div>
 
 - プレートから本塁までは **18.44 m**。踏み出しを考えると、実際に飛ぶのは **約 16.5〜17 m**
-- 10 m までの飛行時間は **0.26 秒**（元の資料の「0.5 秒ほど」と合わない）
-- マグヌス力による浮き上がりは、10 m で約 20 cm、16.8 m で約 57 cm
-  → 10 m の設定では変化量を**約 3 分の 1 に過小評価**
+- 10 m までは **0.26 秒**（「0.5 秒ほど」と合わない）
+- マグヌス力の浮き上がり：10 m で約 20 cm、16.8 m で約 57 cm → 変化量を**約 3 分の 1 に過小評価**
 
 </div>
-</div>
-
-<div class="small center">
-
-本塁（18.44 m）では、空気抵抗のみの場合に比べて、すべての力を入れた場合は約 69 cm 高い位置を通る
-
 </div>
 
 ---
