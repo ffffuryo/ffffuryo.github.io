@@ -8,6 +8,8 @@ from .db import get_settings, set_settings
 bp = Blueprint("api", __name__, url_prefix="/api")
 
 LABELS = ("ア", "イ", "ウ", "エ")
+LABELS_B = tuple("アイウエオカキクケコ")
+B_TOPICS = ("pseudo", "security")
 
 
 class ApiError(Exception):
@@ -43,6 +45,38 @@ def validate_category_ids(v):
     return sorted(set(v))
 
 
+def validate_b_topics(v):
+    if not isinstance(v, list) or not all(isinstance(x, str) and x in B_TOPICS for x in v):
+        raise ApiError("b_topics は pseudo/security の配列で指定してください")
+    return [t for t in B_TOPICS if t in v]
+
+
+def media_urls(raw):
+    try:
+        paths = json.loads(raw) if raw else []
+    except ValueError:
+        paths = []
+    return [f"/media/{p}" for p in paths if isinstance(p, str) and p]
+
+
+def b_fields(q):
+    imgs = media_urls(q["images"])
+    if not imgs and q["image_path"]:
+        imgs = [f"/media/{q['image_path']}"]
+    try:
+        tags = json.loads(q["tags"]) if q["tags"] else []
+    except ValueError:
+        tags = []
+    return {"part": q["part"], "image_urls": imgs, "sub_label": q["sub_label"], "group_id": q["group_id"],
+            "b_topic": q["b_topic"], "tags": tags, "difficulty": q["difficulty"],
+            "has_book_explanation": bool(media_urls(q["explanation_images"]))}
+
+
+def explanation_fields(q):
+    return {"explanation_image_urls": media_urls(q["explanation_images"]),
+            "explanation_source": q["explanation_source"]}
+
+
 # ---- settings ----
 def validate_settings(d):
     out = {}
@@ -65,6 +99,14 @@ def validate_settings(d):
         elif k == "target_sec":
             if not is_int(v) or not 10 <= v <= 600:
                 raise ApiError("target_sec は 10〜600 です")
+        elif k == "session_size_b":
+            if not is_int(v) or not 1 <= v <= 4:
+                raise ApiError("session_size_b は 1〜4 です")
+        elif k == "target_sec_b":
+            if not is_int(v) or not 30 <= v <= 1800:
+                raise ApiError("target_sec_b は 30〜1800 です")
+        elif k == "b_topics":
+            v = validate_b_topics(v)
         else:
             raise ApiError(f"未知の設定キー: {k}")
         out[k] = v
@@ -117,20 +159,23 @@ def session_object(s):
             if reveal:
                 att["is_correct"] = bool(a["is_correct"])
                 att["answer"] = q["answer"]
-        questions.append({
+                if q["part"] == "B":
+                    att.update(explanation_fields(q))
+        questions.append({**b_fields(q), **{
             "id": q["id"], "exam_label": q["exam_label"], "number": q["number"],
             "category_id": q["category_id"], "category_name": q["cname"], "body": q["body"],
             "choices": json.loads(q["choices"]),
             "image_url": f"/media/{q['image_path']}" if q["image_path"] else None,
             "is_calc": bool(q["is_calc"]), "source_label": q["source_label"],
             "explanation_url": q["explanation_url"], "attempt": att,
-        })
+        }})
     remaining = None
     if s["time_limit_sec"] is not None:
         used = conn.execute("SELECT COALESCE(SUM(time_ms),0) FROM attempts WHERE session_id=?",
                             (s["id"],)).fetchone()[0] + s["current_elapsed_ms"]
         remaining = max(0, s["time_limit_sec"] - used // 1000)
-    return {"id": s["id"], "mode": s["mode"], "status": s["status"],
+    part = questions[0]["part"] if questions else "A"
+    return {"id": s["id"], "mode": s["mode"], "part": part, "status": s["status"],
             "current_index": s["current_index"], "current_elapsed_ms": s["current_elapsed_ms"],
             "time_limit_sec": s["time_limit_sec"], "started_at": s["started_at"],
             "remaining_sec": remaining, "questions": questions}
@@ -143,25 +188,36 @@ def home():
     s = conn.execute("SELECT * FROM sessions WHERE status='active' ORDER BY id DESC LIMIT 1").fetchone()
     active = None
     if s:
-        active = {"id": s["id"], "mode": s["mode"], "current_index": s["current_index"],
-                  "total": len(json.loads(s["question_ids"]))}
+        qids = json.loads(s["question_ids"])
+        first = conn.execute("SELECT part FROM questions WHERE id=?", (qids[0],)).fetchone() if qids else None
+        active = {"id": s["id"], "mode": s["mode"], "part": first["part"] if first else "A",
+                  "current_index": s["current_index"], "total": len(qids)}
     one = lambda sql: conn.execute(sql).fetchone()[0]
     pool = {
-        "study": one("SELECT COUNT(*) FROM questions WHERE pool='study'"),
+        "study": one("SELECT COUNT(*) FROM questions WHERE pool='study' AND part='A'"),
         "study_unseen": one(
-            "SELECT COUNT(*) FROM questions q WHERE q.pool='study' "
+            "SELECT COUNT(*) FROM questions q WHERE q.pool='study' AND q.part='A' "
             "AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.question_id=q.id AND a.chosen IS NOT NULL)"),
-        "mock": one("SELECT COUNT(*) FROM questions WHERE pool='mock'"),
+        "mock": one("SELECT COUNT(*) FROM questions WHERE pool='mock' AND part='A'"),
         "review": len(selection.review_ids(conn)),
     }
-    mock_exams = [{"exam_code": r["exam_code"], "exam_label": r["exam_label"], "count": r["n"]}
+    pool_b = {
+        "study": one("SELECT COUNT(*) FROM questions WHERE pool='study' AND part='B'"),
+        "study_unseen": one(
+            "SELECT COUNT(*) FROM questions q WHERE q.pool='study' AND q.part='B' "
+            "AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.question_id=q.id AND a.chosen IS NOT NULL)"),
+        "mock": one("SELECT COUNT(*) FROM questions WHERE pool='mock' AND part='B'"),
+        "review": len(selection.review_ids_b(conn)),
+    }
+    mock_exams = [{"exam_code": r["exam_code"], "exam_label": r["exam_label"], "part": r["part"],
+                   "count": r["n"]}
                   for r in conn.execute(
-                      "SELECT exam_code, exam_label, COUNT(*) n FROM questions WHERE pool='mock' "
-                      "GROUP BY exam_code, exam_label ORDER BY exam_code DESC")]
+                      "SELECT part, exam_code, exam_label, COUNT(*) n FROM questions WHERE pool='mock' "
+                      "GROUP BY part, exam_code, exam_label ORDER BY exam_code DESC, part")]
     return jsonify({"active_session": active, "today": stats.today_summary(conn),
                     "mock_exams": mock_exams,
                     "streak_days": stats.streak_days(conn), "settings": get_settings(conn),
-                    "pool": pool, "weak_categories": stats.weak_categories(conn)})
+                    "pool": pool, "pool_b": pool_b, "weak_categories": stats.weak_categories(conn)})
 
 
 # ---- sessions ----
@@ -173,6 +229,9 @@ def create_session():
     if mode not in ("study", "review", "mock"):
         raise ApiError("mode は study/review/mock です")
     st = get_settings(conn)
+    part = d.get("part", "A")
+    if part not in ("A", "B"):
+        raise ApiError("part は A/B です")
     size = d.get("size")
     if size is not None and (not is_int(size) or not 1 <= size <= 100):
         raise ApiError("size が不正です")
@@ -180,7 +239,23 @@ def create_session():
     rng = current_app.config["RNG"]
     opts = {}
     limit = None
-    if mode == "study":
+    if part == "B":
+        topics = validate_b_topics(d["b_topics"]) if "b_topics" in d else st["b_topics"]
+        if mode == "study":
+            size = size or st["session_size_b"]
+            ids = selection.pick_study_b(conn, size, topics, rng, st["target_sec_b"])
+            opts = {"part": "B", "size": size, "b_topics": topics}
+        elif mode == "review":
+            ids = selection.pick_review_b(conn, size, rng)
+            opts = {"part": "B", "size": size}
+        else:
+            ec = d.get("exam_code")
+            if ec is not None and not isinstance(ec, str):
+                raise ApiError("exam_code が不正です")
+            ids = selection.pick_mock_b(conn, ec, size or selection.B_MOCK_MAX, rng)
+            limit = selection.mock_time_limit_b(len(ids))
+            opts = {"part": "B", "exam_code": ec, "size": len(ids)}
+    elif mode == "study":
         size = size or st["session_size"]
         ids = selection.pick_study(conn, size, st["include_calc"], cat_ids, rng, st["target_sec"])
         opts = {"size": size, "include_calc": st["include_calc"], "category_ids": cat_ids}
@@ -227,11 +302,11 @@ def answer(sid):
     ids = json.loads(s["question_ids"])
     if qid not in ids:
         raise ApiError("このセッションの問題ではありません")
-    if chosen not in LABELS:
+    q = conn.execute("SELECT * FROM questions WHERE id=?", (qid,)).fetchone()
+    if chosen not in (LABELS_B if q["part"] == "B" else LABELS):
         raise ApiError("chosen が不正です")
     if not is_int(t) or t < 0:
         raise ApiError("time_ms が不正です")
-    q = conn.execute("SELECT answer, explanation_url FROM questions WHERE id=?", (qid,)).fetchone()
     ok = int(chosen == q["answer"])
     conn.execute(
         "INSERT INTO attempts(session_id,question_id,chosen,is_correct,time_ms) VALUES(?,?,?,?,?) "
@@ -244,7 +319,10 @@ def answer(sid):
     conn.commit()
     if s["mode"] == "mock":
         return jsonify({"saved": True})
-    return jsonify({"is_correct": bool(ok), "answer": q["answer"], "explanation_url": q["explanation_url"]})
+    res = {"is_correct": bool(ok), "answer": q["answer"], "explanation_url": q["explanation_url"]}
+    if q["part"] == "B":
+        res.update(explanation_fields(q))
+    return jsonify(res)
 
 
 @bp.post("/sessions/<int:sid>/progress")
@@ -299,14 +377,27 @@ def finish(sid):
 
 
 # ---- stats / history / question ----
+def query_part(allowed, default):
+    p = request.args.get("part", default)
+    if p not in allowed:
+        raise ApiError(f"part は {'/'.join(allowed)} です")
+    return p
+
+
+
 @bp.get("/stats/categories")
 def stats_categories():
-    return jsonify(stats.category_stats(db()))
+    return jsonify(stats.category_stats(db(), query_part(("A", "B"), "A")))
+
+
+@bp.get("/stats/b")
+def stats_b():
+    return jsonify(stats.b_stats(db()))
 
 
 @bp.get("/stats/time")
 def stats_time():
-    return jsonify(stats.time_stats(db()))
+    return jsonify(stats.time_stats(db(), query_part(("A", "B", "all"), "all")))
 
 
 @bp.get("/history")
@@ -318,13 +409,14 @@ def history():
         raise ApiError("limit/offset が不正です")
     rows = db().execute(
         "SELECT a.question_id, a.chosen, a.is_correct, a.time_ms, a.answered_at, s.mode, s.status, "
-        "q.answer, q.exam_label, q.number, c.name cname FROM attempts a "
+        "q.answer, q.exam_label, q.number, q.part, q.sub_label, c.name cname FROM attempts a "
         "JOIN sessions s ON s.id=a.session_id JOIN questions q ON q.id=a.question_id "
         "JOIN categories c ON c.id=q.category_id "
         "WHERE a.chosen IS NOT NULL AND (s.mode!='mock' OR s.status='done') "
         "ORDER BY a.id DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
     return jsonify([{
-        "question_id": r["question_id"], "label": f"{r['exam_label']} 問{r['number']}",
+        "question_id": r["question_id"], "part": r["part"],
+        "label": f"{r['exam_label']} 問{r['number']}" + (f" {r['sub_label']}" if r["sub_label"] else ""),
         "category_name": r["cname"], "chosen": r["chosen"], "answer": r["answer"],
         "is_correct": bool(r["is_correct"]), "time_ms": r["time_ms"],
         "answered_at": r["answered_at"], "mode": r["mode"]} for r in rows])
@@ -344,7 +436,10 @@ def get_question(qid):
         "SELECT a.chosen, a.is_correct, a.time_ms, a.answered_at, s.mode FROM attempts a "
         "JOIN sessions s ON s.id=a.session_id WHERE a.question_id=? AND a.chosen IS NOT NULL "
         "AND (s.mode!='mock' OR s.status='done') ORDER BY a.id DESC", (qid,)).fetchall() if reveal else []
-    return jsonify({
+    extra = b_fields(q)
+    if reveal and q["part"] == "B":
+        extra.update(explanation_fields(q))
+    return jsonify({**extra,
         "id": q["id"], "exam_label": q["exam_label"], "number": q["number"],
         "category_id": q["category_id"], "category_name": q["cname"], "body": q["body"],
         "choices": json.loads(q["choices"]),

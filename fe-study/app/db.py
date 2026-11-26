@@ -17,7 +17,31 @@ DEFAULT_SETTINGS = {
     "font_scale": 1.0,
     "theme": "auto",
     "target_sec": 90,
+    "session_size_b": 2,
+    "target_sec_b": 300,
+    "b_topics": [],
 }
+
+# 科目B 対応で questions に追加する列（SPEC 6.1）。既存 DB へは init_db が冪等に ALTER する
+B_COLUMNS = [
+    ("part", "TEXT NOT NULL DEFAULT 'A'"),
+    ("images", "TEXT"),
+    ("group_id", "TEXT"),
+    ("sub_label", "TEXT"),
+    ("b_topic", "TEXT"),
+    ("tags", "TEXT"),
+    ("difficulty", "TEXT"),
+    ("explanation_images", "TEXT"),
+    ("explanation_source", "TEXT"),
+]
+
+
+def migrate(conn):
+    have = {r[1] for r in conn.execute("PRAGMA table_info(questions)")}
+    for name, decl in B_COLUMNS:
+        if name not in have:
+            conn.execute(f"ALTER TABLE questions ADD COLUMN {name} {decl}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_q_part ON questions(part, pool)")
 
 
 def resolve_db_path(db_path=None):
@@ -37,6 +61,7 @@ def init_db(path):
     conn = connect(path)
     try:
         conn.executescript((Path(__file__).parent / "schema.sql").read_text(encoding="utf-8"))
+        migrate(conn)
         for c in CATEGORIES:
             conn.execute(
                 "INSERT INTO categories(id,field,major_no,major_name,name) VALUES(?,?,?,?,?) "

@@ -22,7 +22,16 @@ CREATE TABLE IF NOT EXISTS questions (
   source_url TEXT NOT NULL,
   explanation_url TEXT NOT NULL,
   parse_confidence REAL NOT NULL DEFAULT 1.0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  part TEXT NOT NULL DEFAULT 'A',
+  images TEXT,
+  group_id TEXT,
+  sub_label TEXT,
+  b_topic TEXT,
+  tags TEXT,
+  difficulty TEXT,
+  explanation_images TEXT,
+  explanation_source TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_q_pool_cat ON questions(pool, category_id);
 

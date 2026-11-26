@@ -28,7 +28,7 @@ def test_session_flow(client):
     assert cur["current_index"] == 1
     assert cur["questions"][0]["attempt"] == {"chosen": "ア", "is_correct": True, "time_ms": 6000, "answer": "ア"}
     assert client.get("/api/home").get_json()["active_session"] == {
-        "id": s["id"], "mode": "study", "current_index": 1, "total": 8}
+        "id": s["id"], "mode": "study", "part": "A", "current_index": 1, "total": 8}
     for qq in s["questions"][1:]:
         client.post(f"/api/sessions/{s['id']}/answer",
                     json={"question_id": qq["id"], "chosen": "イ", "time_ms": 1000})
