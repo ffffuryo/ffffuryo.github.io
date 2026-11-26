@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FE Study</title>
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1f2124" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="FE Study">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="static/manifest.webmanifest">
+<link rel="icon" href="static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="static/icon-192.png">
+<script>
+/* テーマ・文字サイズを描画前に反映（ちらつき防止） */
+try{var u=JSON.parse(localStorage.getItem('fe.ui')||'{}'),r=document.documentElement;
+if(u.theme==='light'||u.theme==='dark')r.setAttribute('data-theme',u.theme);
+if(u.font_scale)r.style.setProperty('--fscale',u.font_scale);}catch(e){}
+</script>
+<link rel="stylesheet" href="static/app.css">
+</head>
+<body data-route="home">
+<main id="view" tabindex="-1" aria-live="off"></main>
+
+<nav id="tabbar" aria-label="メインメニュー">
+  <a href="#/home" data-tab="home"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg><span>ホーム</span></a>
+  <a href="#/stats" data-tab="stats"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span>成績</span></a>
+  <a href="#/history" data-tab="history"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span>履歴</span></a>
+  <a href="#/settings" data-tab="settings"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2.2"/><circle cx="9" cy="12" r="2.2"/><circle cx="17" cy="18" r="2.2"/></svg><span>設定</span></a>
+</nav>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<dialog id="sheet" aria-labelledby="sheet-title"></dialog>
+
+<div id="viewer" hidden role="dialog" aria-modal="true" aria-label="図の拡大表示">
+  <div class="viewer-bar">
+    <button type="button" class="btn small" id="viewer-zoom">拡大 / 全体</button>
+    <button type="button" class="btn small" id="viewer-close">閉じる</button>
+  </div>
+  <div class="viewer-title" id="viewer-title" hidden></div>
+  <div class="viewer-scroll" id="viewer-scroll"><div id="viewer-imgs"></div></div>
+</div>
+
+<noscript><p style="padding:1rem">このアプリは JavaScript が必要です。</p></noscript>
+<script src="static/app.js" defer></script>
+</body>
+</html>

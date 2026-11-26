@@ -310,9 +310,12 @@ def parse_furoku_table(doc: Doc, rep: Report, tag: str) -> dict:
 
 
 def header_answer(h: Header) -> str | None:
-    t = nfkc(h.line_text).replace(" ", "")
-    t = re.sub(r"問\d+", "", t, count=1)
-    m = re.search(r":([アイウエオカキクケコ])", t)
+    t = nfkc(h.line_text).replace(" ", "").replace("\u2009", "")
+    # 「問1:カ」「:問17カ」「問:20カ」（重ね順の崩れ）「問1イやさしい」（令和6年版の帯見出し）
+    m = re.match(r"^[:問\d]*([アイウエオカキクケコ])", t)
+    if m:
+        return m.group(1)
+    m = re.search(r":([アイウエオカキクケコ])", re.sub(r"問\d+", "", t, count=1))
     return m.group(1) if m else None
 
 
@@ -547,7 +550,9 @@ def build_furoku(code: str, fno: int, path: Path, images_root: Path, rep: Report
             pool = "mock" if re.search(r"令和\s*[5-8]\s*年", source) else "study"
             src_label = f"出典：{source}／翔泳社{BOOK_TITLE}付録{fno}"
             ex_imgs = save_segs(doc, esegs, images_root, f"b/expl/{code}/q{n:02d}", SCALE_EXPL) if esegs else []
-            base = dict(exam_code=code, exam_label=f"付録{fno}", number=n, pool=pool, b_topic="security",
+            # 模試専用（出典が令和5〜8年）の付録問題は、模試の回一覧で出典が分かる名前にする
+            label = f"付録{fno}" if pool == "study" else f"情報セキュリティ 令和5〜8年 公開問題（付録{fno}）"
+            base = dict(exam_code=code, exam_label=label, number=n, pool=pool, b_topic="security",
                         source_label=src_label, source_url=BOOK_URL,
                         explanation_images=ex_imgs or None, explanation_source=ex_source if ex_imgs else None,
                         origin="furoku")

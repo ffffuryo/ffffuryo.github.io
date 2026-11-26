@@ -111,7 +111,7 @@ class Doc:
             W = float(pg.width)
             halves = [(0.0, W / 2), (W / 2, W)] if self.spread else [(0.0, W)]
             for k, (x0, x1) in enumerate(halves):
-                self.pages.append(self._build(len(self.pages) + 1, pi, pg, x0, x1))
+                self.pages.append(self._build(len(self.pages) + 1, pi, pg, x0, x1, self.spread))
         self._renders: dict = {}
 
     def close(self):
@@ -128,7 +128,7 @@ class Doc:
         return self.pages[no - 1]
 
     @staticmethod
-    def _build(no, pi, pg, x0, x1) -> LPage:
+    def _build(no, pi, pg, x0, x1, spread=False) -> LPage:
         H = float(pg.height)
         crop = pg.crop((x0, 0, x1, H), strict=False)
         raw = crop.extract_text_lines(layout=False, strip=True, return_chars=True)
@@ -143,6 +143,8 @@ class Doc:
                 footer_top = ln["top"] if footer_top is None else min(footer_top, ln["top"])
                 continue
             chars = sorted([c for c in ln["chars"] if c["text"].strip()], key=lambda c: c["x0"])
+            if spread and re.fullmatch(r"[0-9]{3}", t):
+                continue  # 付録4: 書籍本体の（描画されない）ノンブル「492」等
             lines.append(Line(no, ln["top"], ln["bottom"], ln["x0"], ln["x1"], t, chars))
         if footer_top is None:
             footer_top = H - 22
@@ -198,6 +200,12 @@ class Doc:
                                  and s["x0"] <= c["x0"] <= s["x1"])
                 if "問題" in inside:  # 「サンプル問題・解説」「模擬問題」等の章扉の帯だけ
                     out.append(float(s["top"]))
+        # 章の注記の囲み（「付録1は擬似言語のみの解説です…」「この解説は，…の付録です」）
+        for l in P.lines:
+            if re.match(r"^\s*(付録\s*\d+\s*は|この解説は)", nfkc(l.text)):
+                boxes = [s["top"] for s in P.shapes if s["top"] <= l.top and s["bottom"] >= l.bottom
+                         and s["x0"] <= l.x0 and s["x1"] >= l.x1 and s["width"] > 0.6 * P.width]
+                out.append(float(max(boxes)) if boxes else l.top - 8)
         return out
 
     def region(self, start: tuple[int, float], end: tuple[int, float] | None, last_lp: int,

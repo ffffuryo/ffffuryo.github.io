@@ -453,7 +453,8 @@
 
     const follow = isB && Q.idx > 0 && q.group_id && Q.s.questions[Q.idx - 1].group_id === q.group_id;
     const main = h('article', { class: 'qmain' },
-      q.body ? h('p', { class: 'qbody', text: q.body }) : null,
+      // 科目B の body は検索用の抽出テキスト（擬似言語のインデントが崩れる）なので、画像があれば表示しない
+      q.body && !(isB && (q.image_urls || []).length) ? h('p', { class: 'qbody', text: q.body }) : null,
       isB ? bImages(q, follow) : [
         q.image_url ? h('button', { class: 'figure', type: 'button', 'aria-label': '図を拡大して表示', onclick: () => openViewer(q.image_url) },
           h('img', { src: q.image_url, alt: '問題の図・表' })) : null,
@@ -1017,7 +1018,7 @@
         h('button', { class: 'btn small', type: 'button', onclick: () => (history.length > 1 ? history.back() : go('#/history')) }, icon('back'), '戻る'),
         h('span', { class: 'muted small', text: d.category_name || '' })),
       h('h2', { text: `${d.part === 'B' ? '科目B ' : ''}${d.exam_label || ''} 問${d.number ?? ''}${d.sub_label ? ` ${d.sub_label}` : ''}${d.is_calc ? '（計算）' : ''}` }),
-      d.body ? h('p', { class: 'qbody', text: d.body }) : null,
+      d.body && !(d.part === 'B' && (d.image_urls || []).length) ? h('p', { class: 'qbody', text: d.body }) : null,
       d.part === 'B' ? bImages(d, false)
         : (d.image_url ? h('button', { class: 'figure', type: 'button', 'aria-label': '図を拡大して表示', onclick: () => openViewer(d.image_url) }, h('img', { src: d.image_url, alt: '問題の図・表' })) : null),
       choices,
