@@ -35,7 +35,15 @@
   const CATEGORIES = MIDDLES.map(([id, major, name]) => ({
     id, field: fieldOf(id), major_no: major, major_name: MAJORS[major], name,
   }));
-  const CATEGORY_BY_ID = new Map(CATEGORIES.map((c) => [c.id, c]));
+  // 実行時の分類表。既定は上の 23 中分類。パックの categories（meta 'categories'）があれば setCategories で差し替える
+  let CATS = CATEGORIES;
+  let CATEGORY_BY_ID = new Map(CATS.map((c) => [c.id, c]));
+  function setCategories(rows) {
+    const ok = Array.isArray(rows) && rows.length && rows.every((c) => c && isInt0(c.id) && c.field && c.name);
+    CATS = ok ? rows.slice().sort((a, b) => a.id - b.id) : CATEGORIES;
+    CATEGORY_BY_ID = new Map(CATS.map((c) => [c.id, c]));
+  }
+  function isInt0(v) { return typeof v === 'number' && Number.isInteger(v); }
 
   const DEFAULT_SETTINGS = {
     include_calc: true, session_size: 8, category_ids: [], font_scale: 1.0, theme: 'auto', target_sec: 90,
@@ -593,7 +601,7 @@
       lat.set(q.category_id, g);
     }
     const fields = {};
-    for (const c of CATEGORIES) {
+    for (const c of CATS) {
       const t = tot.get(c.id), l = lat.get(c.id);
       const seen = l ? l.seen : 0;
       (fields[c.field] = fields[c.field] || []).push({
@@ -774,7 +782,7 @@
   }
 
   return {
-    CATEGORIES, FIELD_NAMES, DEFAULT_SETTINGS, LABELS, LABELS_B, B_TOPICS, B_TOPIC_NAMES, DIFFICULTIES, B_MOCK_MAX,
+    CATEGORIES, setCategories, FIELD_NAMES, DEFAULT_SETTINGS, LABELS, LABELS_B, B_TOPICS, B_TOPIC_NAMES, DIFFICULTIES, B_MOCK_MAX,
     ApiError, isInt, pyRound, round4, median, shuffle, nat, addDays, todayOf, latestMap,
     validateCategoryIds, validateBTopics, validateSettings, mergeSettings,
     pickStudy, pickReview, reviewIds, pickMock, mockTimeLimit,

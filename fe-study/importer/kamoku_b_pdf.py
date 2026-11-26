@@ -193,8 +193,11 @@ class Doc:
         for s in P.shapes:
             if not s.get("fill") or not is_magenta(s.get("non_stroking_color")):
                 continue
-            if s["width"] > 0.75 * P.width and 16 <= s["height"] <= 45 and s["top"] < 80:
-                out.append(float(s["top"]))
+            if s["width"] > 0.75 * P.width and 16 <= s["height"] <= 45 and 5 < s["top"] < 80:
+                inside = "".join(c["text"] for c in P.chars if s["top"] <= c["top"] <= s["bottom"]
+                                 and s["x0"] <= c["x0"] <= s["x1"])
+                if "問題" in inside:  # 「サンプル問題・解説」「模擬問題」等の章扉の帯だけ
+                    out.append(float(s["top"]))
         return out
 
     def region(self, start: tuple[int, float], end: tuple[int, float] | None, last_lp: int,
@@ -250,9 +253,11 @@ class Doc:
                     continue
                 same = sorted([c for c in P.chars if abs(c["top"] - ch["top"]) < 3 and c is not ch
                                and ch["x0"] < c["x0"] < ch["x1"] + ch["size"] * 3], key=lambda c: c["x0"])
+                same = [c for c in same if c["text"] not in "：:\u2009 　"]
                 if not same or not RE_DIGIT.match(same[0]["text"]):
                     continue
-                if any(h.lp == no and abs(h.char_top - ch["top"]) < 4 for h in out):
+                if any(h.lp == no and abs(h.char_top - ch["top"]) < 9 and abs(h.x0 - ch["x0"]) < 12
+                       for h in out):
                     continue  # 重ね文字（付録4の「問49」と「問1」等）
                 digits = ""
                 for c in same:
