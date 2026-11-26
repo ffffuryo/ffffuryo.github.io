@@ -103,7 +103,14 @@
   class NetError extends Error {}
   class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
+  const STANDALONE = !!window.FE_STANDALONE;
   async function api(method, path, body, { timeout = 10000 } = {}) {
+    if (STANDALONE) { // ブラウザ内ローカル API（fetch しない）。エラーは {status, error} → ApiError に揃える
+      try { return await window.FELocal.api(method, path, body); } catch (e) {
+        if (e && e.status != null) throw new ApiError(e.status, e.error || e.message || `HTTP ${e.status}`);
+        throw e;
+      }
+    }
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeout);
     let res;
@@ -159,6 +166,7 @@
     return flushing;
   }
   function netText() {
+    if (STANDALONE) return '';
     const n = queue.all().length;
     if (!navigator.onLine) return `オフライン：あとで保存${n ? `（${n}件）` : ''}`;
     return n ? `未送信 ${n}件を再送待ち` : '';
@@ -570,6 +578,7 @@
   }
 
   async function submitAnswer(sid, body) {
+    if (STANDALONE) return api('POST', `/api/sessions/${sid}/answer`, body);
     if (queue.all().length) {
       await flushQueue();
       if (queue.all().length) { queue.push({ sid, body, ts: Date.now() }); return null; }
@@ -634,6 +643,7 @@
   function sendProgress(beacon) {
     const Q = S.quiz;
     if (!Q || Q.done || Q.idx >= Q.s.questions.length) return;
+    if (STANDALONE) { api('POST', `/api/sessions/${Q.s.id}/progress`, progressPayload()).catch(() => {}); return; }
     if (queue.all().length) { if (!beacon) flushQueue(); return; }
     const url = `/api/sessions/${Q.s.id}/progress`, p = progressPayload();
     if (beacon && navigator.sendBeacon) {
@@ -1049,6 +1059,7 @@
     const sel = () => new Set(st.category_ids && st.category_ids.length ? st.category_ids : allIds);
 
     const root = h('div', { class: 'page' });
+    const dataEl = STANDALONE ? dataCard() : null;
     const draw = () => {
       const selected = sel();
       const totalQ = cats.reduce((a, f) => a + f.categories.filter((c) => selected.has(c.id)).reduce((b, c) => b + c.total, 0), 0);
@@ -1131,11 +1142,107 @@
             h('div', { class: 'stepper' },
               h('button', { class: 'btn', type: 'button', 'aria-label': '15秒短くする', disabled: st.target_sec <= 30, onclick: () => { setSetting('target_sec', Math.max(30, st.target_sec - 15)); draw(); }, text: '−' }),
               h('b', { 'aria-live': 'polite', text: `${st.target_sec}秒` }),
-              h('button', { class: 'btn', type: 'button', 'aria-label': '15秒長くする', disabled: st.target_sec >= 300, onclick: () => { setSetting('target_sec', Math.min(300, st.target_sec + 15)); draw(); }, text: '＋' })))));
+              h('button', { class: 'btn', type: 'button', 'aria-label': '15秒長くする', disabled: st.target_sec >= 300, onclick: () => { setSetting('target_sec', Math.min(300, st.target_sec + 15)); draw(); }, text: '＋' })))),
+        dataEl);
     };
     draw();
     view.replaceChildren(root);
     S.cleanup = () => { if (Object.keys(pendingPatch).length) { clearTimeout(saveTimer); flushSettings(); } };
+  }
+
+  /* ================= スタンドアロン: データ管理・オンボーディング ================= */
+  const fmtBytes = (n) => (n == null ? '—' : n >= 1048576 ? `${(n / 1048576).toFixed(n >= 1.07e8 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  const fmtDay = (iso) => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` : '—'; };
+  const progressBar = () => {
+    const fill = h('div', { class: 'pfill' }), label = h('p', { class: 'muted small center', role: 'status', text: '' });
+    const bar = h('div', { class: 'pbar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, fill);
+    const el = h('div', { class: 'pwrap', hidden: true }, bar, label);
+    return { el, set(r, t) { el.hidden = false; const v = Math.round(r * 100); fill.style.width = `${v}%`; bar.setAttribute('aria-valuenow', String(v)); label.textContent = `${t || ''} ${v}%`; } };
+  };
+  function pickZip(onFile) {
+    const inp = h('input', { type: 'file', accept: '.zip,application/zip', hidden: true });
+    inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; if (f) onFile(f); inp.value = ''; });
+    return inp;
+  }
+  const afterDataChange = () => { S.home = null; S.homeStale = true; S.cats = null; };
+
+  function showOnboarding() {
+    return new Promise(async (resolve) => {
+      document.body.dataset.route = 'onboard';
+      const info = await FEPack.publicInfo().catch(() => ({ size: null }));
+      const pb = progressBar();
+      const err = h('p', { class: 'small', style: { color: 'var(--ng-text)' }, hidden: true });
+      let busy = false;
+      const run = async (fn, btns) => {
+        if (busy) return; busy = true; err.hidden = true; btns.forEach((b) => { b.disabled = true; });
+        try { await fn(); resolve(); } catch (e) {
+          err.hidden = false; err.textContent = `失敗しました：${(e && e.message) || e}`; pb.el.hidden = true;
+          btns.forEach((b) => { b.disabled = false; }); busy = false;
+        }
+      };
+      const dl = h('button', { class: 'btn primary hero', type: 'button' },
+        h('span', { text: `問題データをダウンロード` }),
+        h('span', { class: 'hero-sub', text: `${info.size ? `約 ${info.size >= 1048576 ? Math.round(info.size / 1048576) + ' MB' : fmtBytes(info.size)}・` : ''}Wi-Fi 推奨` }));
+      const file = pickZip((f) => run(() => FEPack.installPack(f, pb.set), [dl, pick]));
+      const pick = h('button', { class: 'btn ghost small', type: 'button', onclick: () => file.click(), text: '書籍付録パックを読み込む（任意）' });
+      dl.addEventListener('click', () => run(() => FEPack.downloadPublicPack(null, pb.set), [dl, pick]));
+      view.replaceChildren(h('div', { class: 'page onboard' },
+        h('div', { class: 'pagehead' }, h('h1', { text: 'FE Study' })),
+        h('p', { text: '基本情報技術者試験の学習アプリです。最初に問題データを端末へ保存すると、以後は電波がなくても使えます。' }),
+        dl, pb.el, err,
+        h('div', { class: 'center' }, pick, file),
+        h('section', { class: 'card small' },
+          h('b', { text: 'ホーム画面に追加すると安心です' }),
+          h('p', { class: 'muted', text: 'iPhone は Safari の共有メニュー →「ホーム画面に追加」。追加しないと、7日間アプリを開かなかったときに保存データが消える場合があります。学習記録は設定からバックアップできます。' }))));
+    });
+  }
+
+  function dataCard() {
+    const root = h('section', { class: 'card setgroup', 'aria-label': 'データ管理' });
+    const pb = progressBar();
+    let busy = false;
+    const run = async (fn, okMsg) => {
+      if (busy) return; busy = true;
+      try { const r = await fn(); afterDataChange(); toast(okMsg(r), 2800); } catch (e) { toast(`失敗しました：${(e && e.message) || e}`, 3500); }
+      busy = false; pb.el.hidden = true; draw();
+    };
+    const line = (k, v) => h('div', { class: 'srow' }, h('div', { class: 'lbl', text: k }), h('span', { class: 'muted small', text: v }));
+    const privFile = pickZip((f) => run(() => FEPack.installPack(f, pb.set), (r) => `${r.manifest.kind === 'private' ? '書籍付録' : '公開'}パックを読み込みました（${r.questions}問）`));
+    const bakIn = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+    bakIn.addEventListener('change', () => {
+      const f = bakIn.files && bakIn.files[0]; bakIn.value = '';
+      if (f) run(() => FEBackup.importData(f, 'merge'), (r) => `学習記録を読み込みました（回答 ${r.attempts_added}件追加）`);
+    });
+    async function wipe() {
+      if (!(await confirmSheet('すべて削除しますか？', '問題データと学習記録（回答履歴・設定）がこの端末から消えます。', '次へ', 'やめる'))) return;
+      if (!(await confirmSheet('本当に削除しますか？', 'この操作は元に戻せません。先にバックアップの書き出しをおすすめします。', 'すべて削除する', 'やめる'))) return;
+      try {
+        await FEPack.clearAll();
+        ['fe.ui', 'fe.queue', 'fe.result', 'fe.lastStart'].forEach((k) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch { /* noop */ } });
+        history.replaceState(null, '', '#/home'); location.reload();
+      } catch (e) { toast(`削除できませんでした：${e.message}`, 3500); }
+    }
+    async function draw() {
+      let st = null, est = null, persisted = null;
+      try { st = await FEPack.packStatus(); } catch { /* noop */ }
+      try { est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null; } catch { /* noop */ }
+      try { persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null; } catch { /* noop */ }
+      const pk = (k) => (st && st[k] ? `${st[k].manifest.question_count}問・${fmtDay(st[k].manifest.created_at || st[k].installed_at)}` : '未導入');
+      root.replaceChildren(
+        h('h2', { text: 'データ管理' }),
+        line('公開パック', pk('public')), line('書籍付録パック', pk('private')),
+        line('保存済みの問題', st ? `${st.question_count}問` : '—'),
+        line('使用量', est ? `${fmtBytes(est.usage)}${est.quota ? ` / ${fmtBytes(est.quota)}` : ''}` : '—'),
+        line('永続化', persisted == null ? '—' : persisted ? '有効（消えにくい）' : '未許可（ホーム画面に追加すると許可されやすい）'),
+        pb.el,
+        h('button', { class: 'btn block', type: 'button', onclick: () => run(() => FEPack.downloadPublicPack(null, pb.set), (r) => `公開パックを更新しました（${r.questions}問）`), text: '公開パックを更新' }),
+        h('button', { class: 'btn block', type: 'button', onclick: () => privFile.click(), text: '書籍付録パックを読み込む' }), privFile,
+        h('button', { class: 'btn block', type: 'button', onclick: () => run(() => FEBackup.download(), (r) => `書き出しました（回答 ${r.attempts}件）`), text: '学習記録を書き出す' }),
+        h('button', { class: 'btn block', type: 'button', onclick: () => bakIn.click(), text: '学習記録を読み込む' }), bakIn,
+        h('button', { class: 'btn block danger', type: 'button', onclick: wipe, text: 'すべて削除' }));
+    }
+    draw();
+    return root;
   }
 
   /* ================= 起動 ================= */
@@ -1146,6 +1253,12 @@
     window.addEventListener('hashchange', route);
     $('#sheet').addEventListener('click', (e) => { if (e.target === $('#sheet')) closeSheet(); });
     updateNet();
+    if (STANDALONE) {
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch { /* noop */ }
+      let st = null;
+      try { st = await FEPack.packStatus(); } catch { /* local/*.js 未読込など */ }
+      if (st && st.question_count === 0) { await showOnboarding(); afterDataChange(); history.replaceState(null, '', '#/home'); }
+    }
     // 起動時に /api/home を 1 回だけ呼ぶ（以降のホーム表示は stale 時のみ再取得）
     try {
       const home = await api('GET', '/api/home');
@@ -1158,6 +1271,6 @@
 
   // Service Worker（HTTPS または localhost のときのみ有効。tailscale serve は HTTPS）
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {}); });
   }
 })();
