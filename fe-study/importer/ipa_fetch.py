@@ -54,15 +54,6 @@ class Exam:
         return f"https://www.fe-siken.com/kakomon/{self.code}/q{n}.html"
 
 
-def _era(gyear: int) -> tuple[str, str]:
-    """西暦年度 -> (道場コード年2桁, 和暦表記 '平成21年' / '令和元年')"""
-    if gyear <= 2018 or (gyear == 2019):
-        h = gyear - 1988
-        return f"{h:02d}", f"平成{h}年"
-    r = gyear - 2018
-    return f"{r:02d}", ("令和元年" if r == 1 else f"令和{r}年")
-
-
 RE_AM = re.compile(r"/(\d{4})(h|r)(\d\d)(h|a|tokubetsu)_fe_am_(qs|ans)\.pdf$")
 RE_KOUKAI = re.compile(r"/(\d{4})r(\d\d)_fe_kamoku_a_(qs|ans)\.pdf$")
 

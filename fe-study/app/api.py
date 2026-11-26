@@ -154,7 +154,12 @@ def home():
         "mock": one("SELECT COUNT(*) FROM questions WHERE pool='mock'"),
         "review": len(selection.review_ids(conn)),
     }
+    mock_exams = [{"exam_code": r["exam_code"], "exam_label": r["exam_label"], "count": r["n"]}
+                  for r in conn.execute(
+                      "SELECT exam_code, exam_label, COUNT(*) n FROM questions WHERE pool='mock' "
+                      "GROUP BY exam_code, exam_label ORDER BY exam_code DESC")]
     return jsonify({"active_session": active, "today": stats.today_summary(conn),
+                    "mock_exams": mock_exams,
                     "streak_days": stats.streak_days(conn), "settings": get_settings(conn),
                     "pool": pool, "weak_categories": stats.weak_categories(conn)})
 

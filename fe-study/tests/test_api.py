@@ -157,3 +157,17 @@ def test_media_and_static(client, app):
     assert client.get("/media/nope.png").status_code == 404
     assert client.get("/static/../app/db.py").status_code == 404
     assert client.get("/api/nothing").get_json() is not None
+
+
+def test_home_lists_mock_exams(client):
+    d = client.get("/api/home").get_json()
+    assert d["mock_exams"], "模試の回一覧が空"
+    for e in d["mock_exams"]:
+        assert e["exam_code"][:2] in ("05", "06", "07", "08")
+        assert e["count"] > 0
+
+
+def test_service_worker_served_from_root(client):
+    r = client.get("/sw.js")
+    assert r.status_code == 200
+    assert r.headers.get("Service-Worker-Allowed") == "/"

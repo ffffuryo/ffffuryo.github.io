@@ -37,6 +37,13 @@ def create_app(db_path=None):
     def index():
         return send_from_directory(STATIC_DIR, "index.html", max_age=0)
 
+    @app.route("/sw.js")
+    def service_worker():
+        # ルートから配信してスコープを / にする
+        resp = send_from_directory(STATIC_DIR, "sw.js", max_age=0)
+        resp.headers["Service-Worker-Allowed"] = "/"
+        return resp
+
     @app.route("/static/<path:filename>")
     def static_files(filename):
         return send_from_directory(STATIC_DIR, filename, max_age=300)
