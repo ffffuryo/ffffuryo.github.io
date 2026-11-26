@@ -304,3 +304,63 @@ CREATE INDEX IF NOT EXISTS idx_q_part ON questions(part, pool);
 - 回答後: 正誤・正解に加え「解説を見る（書籍付録）」ボタン → 解説画像を縦に並べた全画面ビューア。過去問道場リンクは explanation_url が空なら出さない。
 - 成績: 「科目A / 科目B」切替。B は テーマ（擬似言語 / 情報セキュリティ）、タグ別（トレース・再帰・配列…）、難易度別の正答率と平均時間。
 - 設定: 「科目B」セクション（1回の問題数 1〜4、テーマ選択、目標時間）。
+
+---
+
+# 7. スマホ単体版（スタンドアロン PWA）
+
+PC サーバー・Tailscale なしで、スマホのブラウザだけで完結させる。学習記録はスマホ内（IndexedDB）に保存し、完全オフラインで動く。
+Python + SQLite は「問題データを作る工程」（IPA PDF 取り込み → `data/fe.db` → データパック書き出し）で使う。サーバー版（`python -m app`）も引き続き動く。
+
+## 7.1 全体構成
+```
+[PC] python -m importer / importer.kamoku_b  →  data/fe.db (SQLite)
+     python -m tools.pack                     →  dist/fe-pack-public.zip   （IPA 問題のみ。公開可）
+                                                  dist/fe-pack-private.zip  （書籍付録由来。私的使用・公開禁止）
+     python -m tools.build_site               →  リポジトリ直下 fe/（GitHub Pages で https://ffffuryo.github.io/fe/ として配信）
+                                                  fe/packs/fe-pack-public.zip を同梱
+[スマホ] https://ffffuryo.github.io/fe/ を開く → 初回だけ「問題データをダウンロード」1タップ（public パック）
+        → 任意で「書籍付録パックを読み込む」（PC から AirDrop/Files/Drive 等で渡した private zip を選択）
+        → ホーム画面に追加。以後はオフラインで 1 タップ学習。
+```
+- **private パックは絶対に fe/ やリポジトリに入れない**（翔泳社付録の私的使用条件）。build_site はこれを検査して拒否する。
+
+## 7.2 データパック形式（ZIP、無圧縮 ZIP_STORED。PNG は既に圧縮済みのため）
+- `manifest.json`: `{"format":"fe-pack","version":1,"kind":"public"|"private","created_at":"...","question_count":N,"patch_count":M,"image_count":K}`
+- `categories.json`: SPEC 2章 categories の行配列。
+- `questions.json`: 問題行の配列。キーは DB の列名そのまま。ただし JSON 文字列の列（choices, images, tags, explanation_images）は**配列にデコード済み**、is_calc は bool。画像パスは data/images 相対のまま（例 `31_haru/q01.png`, `b/sample/q01_1.png`）。
+- `patches.json`（private のみ）: 既存（public）問題への追記 `[{"id":"feb-sample-q01","explanation_images":[...],"explanation_source":"...","tags":[...],"difficulty":"ふつう"}]`。
+- `images/<path>`: 画像バイナリ。
+- public パックの中身: exam_code が furoku* 以外の問題（IPA 由来）。**科目B の explanation_images / explanation_source / tags / difficulty は空にする**（書籍由来のため）。画像も IPA 問題画像のみ。
+- private パックの中身: exam_code が furoku* の問題（行＋問題画像＋解説画像）と、IPA 問題への patches（＋解説画像）。
+- パックの画像は 16 階調グレースケールを 4bit パレット PNG（`Image.convert("P", palette=ADAPTIVE, colors=16)` 相当、bits=4）に再圧縮してサイズを削る。
+
+## 7.3 ブラウザ側ストレージ（IndexedDB `fe-study`、version 1）
+| store | keyPath | 内容 / index |
+|---|---|---|
+| questions | id | 問題行（7.2 の形式。patches 適用済み） / index: part, pool |
+| blobs | path | `{path, blob}` 画像 |
+| sessions | id (autoIncrement) | SPEC 2章 sessions と同じ項目（question_ids は配列、options はオブジェクト） / index: status |
+| attempts | id (autoIncrement) | SPEC 2章 attempts と同じ項目 / index: question_id, session_id |
+| settings | key | `{key, value}` |
+| meta | key | `{key:"pack:public", manifest}` 等 |
+- 日時文字列はサーバー版と同じ「ローカル時刻 `YYYY-MM-DD HH:MM:SS`」。
+- 起動時に `navigator.storage.persist()` を要求（消去されにくくする）。
+
+## 7.4 ローカル API（`static/local/`）
+- `static/local/logic.js`: 出題（SPEC 3章・6.3 の selection）と集計（stats）の**純粋関数**。入力は問題配列・attempt 配列・セッション配列・設定・rng、出力は API と同じ JSON。Python 版（app/selection.py, app/stats.py, app/api.py）と同じ結果になるよう移植する。UMD 形式（ブラウザは `window.FELogic`、Node は `module.exports`）。
+- `static/local/store.js`: IndexedDB ラッパー（`window.FEStore`）。テスト用にメモリ実装も持つ。
+- `static/local/api-local.js`: `window.FELocal.api(method, path, body)` が SPEC 4章・6.3 の全エンドポイントと**同じレスポンス**を返す（エラーは `{status, error}` を throw）。画像パスは blob の object URL（`URL.createObjectURL`、パス単位でキャッシュ）に変換して `image_url` / `image_urls` / `explanation_image_urls` に入れる。
+- `static/local/pack.js`: ZIP（無圧縮）リーダー（中央ディレクトリを読む。外部ライブラリなし）、`installPack(arrayBuffer|File, onProgress)`（questions/blobs/meta に書き込み、patches 適用、同じ id は上書き＝冪等）、`packStatus()`、`downloadPublicPack(url, onProgress)`（fetch のストリームで進捗表示）。
+- `static/local/backup.js`: 学習記録（sessions/attempts/settings）の JSON 書き出し（ダウンロード）と読み込み（マージ/置換）。問題データは含めない。
+- `app.js` の `api()` は `window.FE_STANDALONE` が true のとき `FELocal.api` を呼ぶ（fetch しない）。sendBeacon / オフライン送信キューはスタンドアロンでは使わない（直接保存）。
+
+## 7.5 スタンドアロン UI 追加
+- 初回（questions が 0 件）: オンボーディング画面「問題データをダウンロード（約 NN MB・Wi-Fi 推奨）」主ボタン 1 つ＋進捗バー。下に小さく「書籍付録パックを読み込む（任意）」（`<input type=file accept=".zip">`）。完了したらそのままホームへ。
+- 設定 →「データ管理」: パックの状態（public/private の作成日・問題数）、public の再ダウンロード（更新）、private の読み込み、学習記録のバックアップ書き出し / 読み込み、保存領域の永続化状態と使用量（`navigator.storage.estimate()`）、「すべて削除」（確認 2 段階）。
+- ホーム画面追加の案内（iOS は Safari 共有メニュー →「ホーム画面に追加」。iOS はホーム画面追加しないと 7 日間未使用でデータが消える場合がある旨を明記）。
+
+## 7.6 GitHub Pages 用サイト（`fe/`、tools/build_site.py が生成）
+- `fe/index.html`（`window.FE_STANDALONE=true` を設定して local/*.js → app.js を読み込む）、`fe/static/*`（app.js, app.css, local/*.js, アイコン, manifest）、`fe/sw.js`、`fe/packs/fe-pack-public.zip`。
+- すべて**相対パス**（サブパス /fe/ で動くこと）。manifest の start_url / scope は `./`。sw.js のスコープは `./`、キャッシュ対象はアプリシェルのみ（パックは IndexedDB に入るので SW ではキャッシュしない）。
+- サーバー版（`/` 配信）でも同じ static ファイルが動くよう、app.js は絶対パス `/api` を使うのはサーバーモードのときだけにする。
