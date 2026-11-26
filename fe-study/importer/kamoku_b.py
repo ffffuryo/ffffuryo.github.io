@@ -172,6 +172,7 @@ class Report:
     answer_checks: list = field(default_factory=list)   # (src, 問, ipa, book, expl, ok)
     merged: list = field(default_factory=list)          # (付録の問, 統合先 id, 理由)
     skipped: list = field(default_factory=list)
+    similar: list = field(default_factory=list)         # 統合しなかった類似問題
 
     def warn(self, msg):
         self.warnings.append(msg)
@@ -188,7 +189,10 @@ def similar(a: str, b: str, n: int = 160) -> float:
     a, b = norm_text(a)[:n], norm_text(b)[:n]
     if len(a) < 30 or len(b) < 30:
         return 0.0
-    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    if sm.real_quick_ratio() < 0.5 or sm.quick_ratio() < 0.5:
+        return 0.0
+    return sm.ratio()
 
 
 def text_of(doc: Doc, segs: list[Seg]) -> str:
@@ -220,7 +224,7 @@ def _find_word(chars: list, word: str):
     """x 順に並んだ文字列から word が連続して現れる位置の先頭文字を返す。"""
     s = "".join(c["text"] for c in chars)
     i = s.find(word)
-    return chars[i] if i >= 0 else None
+    return (chars[i], chars[i + len(word) - 1]) if i >= 0 else None
 
 
 def _box_x1(P, ch) -> float | None:
@@ -247,9 +251,9 @@ def parse_answer_book_table(doc: Doc, rep: Report, tag: str) -> dict:
     hchars = sorted([c for c in P.chars if abs(c["top"] - hdr_p.top) < 4], key=lambda c: c["x0"])
     cols = []
     for word in ("トレース", "データ構造", "オブジェクト指向", "再帰"):
-        c = _find_word(hchars, word)
-        if c is not None:
-            cols.append((c["x0"], word))
+        f = _find_word(hchars, word)
+        if f is not None:
+            cols.append((f[0]["x0"], f[1]["x1"], word))
     cols.sort()
     trace_x0 = cols[0][0] if cols else None
     box_p = _box_x1(P, next(c for c in hchars if c["text"] == "擬"))
@@ -276,9 +280,11 @@ def parse_answer_book_table(doc: Doc, rep: Report, tag: str) -> dict:
             cy = (l.top + l.bottom) / 2
             rch = sorted([c for c in P.chars if abs((c["top"] + c["bottom"]) / 2 - cy) < 4.5],
                          key=lambda c: c["x0"])
-            for i, (cx0, word) in enumerate(cols):
-                cx1 = cols[i + 1][0] - 3 if i + 1 < len(cols) else cx0 + 70
-                txt = "".join(c["text"] for c in rch if cx0 - 3 <= c["x0"] < cx1).strip()
+            for i, (hx0, hx1, word) in enumerate(cols):
+                # 列の範囲: 左隣の見出しの右端〜右隣の見出しの左端（データ構造のセルは左寄せのため）
+                cx0 = cols[i - 1][1] + 1 if i > 0 else hx0 - 6
+                cx1 = cols[i + 1][0] - 1 if i + 1 < len(cols) else hx1 + 25
+                txt = "".join(c["text"] for c in rch if cx0 <= c["x0"] < cx1).strip()
                 if word == "データ構造":
                     tags += [t.strip() for t in re.split(r"[，,、]", txt) if t.strip() and t.strip() != "○"]
                 elif "○" in txt:
@@ -511,11 +517,15 @@ def build_furoku(code: str, fno: int, path: Path, images_root: Path, rep: Report
                     target, why = existing[f"feb-{scode}-q{int(mm.group(1)):02d}"], "出典が同じ"
                     break
             if target is None:
-                best = max(((similar(body, it.body), it) for it in existing.values()
-                            if it.group_id is None or it.id.endswith("-1")),
-                           key=lambda x: x[0], default=(0, None))
-                if best[0] >= 0.85:
+                # 本文全体（設問・解答群まで）がほぼ同じで正解も同じものだけ同一問題とみなす。
+                # IPA は同じ状況設定で設問だけ変えて再出題することがあるため、冒頭だけの一致では統合しない。
+                a_here = t["answer"] or (header_answer(eh) if eh else None)
+                best = max(((similar(body, it.body, 3000), it) for it in existing.values()
+                            if it.group_id is None), key=lambda x: x[0], default=(0, None))
+                if best[0] >= 0.9 and a_here and a_here == best[1].answer:
                     target, why = best[1], f"本文が一致（類似度 {best[0]:.2f}）"
+                elif best[0] >= 0.6:
+                    rep.similar.append((f"{code} 問{n}", best[1].id, round(best[0], 2), a_here, best[1].answer))
             if target is not None:
                 a_here = t["answer"] or (header_answer(eh) if eh else None)
                 if a_here and a_here != target.answer:
@@ -580,11 +590,11 @@ def build_furoku(code: str, fno: int, path: Path, images_root: Path, rep: Report
             # ---- 複数設問（共通の問題文 + 設問ごとの小問）
             group = f"{code}-q{n:02d}"
             reg_start = (segs[0].lp, segs[0].y0)
-            stem = slice_segs(segs, reg_start, (sl.lp, sl.top - 3)) if sl else segs
+            stem = slice_segs(segs, reg_start, _cut(doc, sl)) if sl else segs
             stem_imgs = save_segs(doc, stem, images_root, f"b/{code}/q{n:02d}_stem", SCALE_Q)
             stem_text = text_of(doc, stem)
             sub_keys = sorted(subs)
-            intro = slice_segs(segs, (sl.lp, sl.top - 3), (subs[sub_keys[0]].lp, subs[sub_keys[0]].top - 3)) \
+            intro = slice_segs(segs, _cut(doc, sl), _cut(doc, subs[sub_keys[0]])) \
                 if (sl and sub_keys) else []
             units = []  # (sub_id, sub_label, answer, sub_no)
             if sa["kind"] == "subs":
@@ -604,10 +614,10 @@ def build_furoku(code: str, fno: int, path: Path, images_root: Path, rep: Report
                 notes = []
                 if k in subs:
                     nxt = [x for x in sub_keys if x > k]
-                    sub_end = (subs[nxt[0]].lp, subs[nxt[0]].top - 3) if nxt else None
-                    part = slice_segs(segs, (subs[k].lp, subs[k].top - 3), sub_end)
+                    sub_end = _cut(doc, subs[nxt[0]]) if nxt else None
+                    part = slice_segs(segs, _cut(doc, subs[k]), sub_end)
                 else:
-                    part = slice_segs(segs, (sl.lp, sl.top - 3), None) if sl else []
+                    part = slice_segs(segs, _cut(doc, sl), None) if sl else []
                     conf -= 0.3
                     notes.append(f"小問({k}) の位置が見つからない")
                 own = intro + part
@@ -628,6 +638,15 @@ def build_furoku(code: str, fno: int, path: Path, images_root: Path, rep: Report
     finally:
         doc.close()
     return items
+
+
+def _cut(doc: Doc, line) -> tuple:
+    """行の直前で切る位置 (論理ページ, y)。前の行との中間（空欄の枠が文字より上に出るため top より上で切る）。"""
+    prev = [l for l in doc.lp(line.lp).lines if l.bottom <= line.top + 0.5 and l is not line]
+    if prev:
+        pb = max(l.bottom for l in prev)
+        return (line.lp, max(pb + 0.5, min(line.top - 3, (pb + line.top) / 2)))
+    return (line.lp, line.top - 5)
 
 
 def _fix_labels(ch, answer: str, conf: float, notes: list):
@@ -773,6 +792,10 @@ def main(argv=None) -> int:
         print("\n重複統合（付録版は作らない）:")
         for m in rep.merged:
             print(f"   {m[0]} -> {m[1]}（{m[2]}）")
+    if rep.similar:
+        print("\n類似だが別問題として残したもの（同じ状況設定で設問・正解が違う等）:")
+        for s_ in rep.similar:
+            print(f"   {s_[0]} ~ {s_[1]} 類似度 {s_[2]} 正解 {s_[3]} / {s_[4]}")
     if rep.skipped:
         print("\n出題しない小問:")
         for s in rep.skipped:

@@ -378,6 +378,9 @@ def save_segs(doc: Doc, segs: list[Seg], images_root: Path, rel_prefix: str, sca
         arr = np.asarray(img)
         if arr.size == 0 or (arr < 200).sum() < 30:
             continue
+        ink_rows = np.nonzero((arr < 200).any(1))[0]
+        if ink_rows[-1] - ink_rows[0] < 6 * scale:  # 罫線・枠の端だけ（6pt 未満）の切れ端は捨てる
+            continue
         rel = f"{rel_prefix}_{k}.png"
         _save_png(img, images_root / rel)
         out.append(rel)
