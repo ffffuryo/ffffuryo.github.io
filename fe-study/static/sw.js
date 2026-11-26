@@ -1,6 +1,6 @@
 // FE Study Service Worker: アプリ画面（シェル）をキャッシュし、電波が切れても起動できるようにする。
 // /api/* はキャッシュしない（回答のオフライン保存は app.js の送信キューが担当）。
-const CACHE = 'fe-study-v1';
+const CACHE = 'fe-study-v2';
 const SHELL = ['/', '/static/app.js', '/static/app.css', '/static/manifest.webmanifest',
                '/static/icon.svg', '/static/icon-192.png'];
 

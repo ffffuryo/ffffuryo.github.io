@@ -2,9 +2,12 @@
 'use strict';
 (() => {
   /* ================= ユーティリティ ================= */
-  const DEFAULTS = { include_calc: true, session_size: 8, category_ids: [], font_scale: 1.0, theme: 'auto', target_sec: 90 };
+  const DEFAULTS = { include_calc: true, session_size: 8, category_ids: [], font_scale: 1.0, theme: 'auto', target_sec: 90, session_size_b: 2, target_sec_b: 300, b_topics: [] };
   const MODE_NAME = { study: '学習', review: '復習', mock: '模擬試験' };
-  const LABELS = ['ア', 'イ', 'ウ', 'エ'];
+  const B_TOPIC_NAME = { pseudo: '擬似言語', security: '情報セキュリティ' };
+  const partLabel = (p) => (p === 'B' ? '科目B' : '科目A');
+  const imgList = (q) => (q.image_urls && q.image_urls.length ? q.image_urls : q.image_url ? [q.image_url] : []);
+  const targetSecOf = (q) => (q && q.part === 'B' ? (S.settings.target_sec_b || 300) : (S.settings.target_sec || 90));
   const $ = (sel, root = document) => root.querySelector(sel);
   const view = $('#view');
   const pad = (n) => String(n).padStart(2, '0');
@@ -281,15 +284,25 @@
   }
 
   function renderHome() {
-    const hm = S.home, act = hm.active_session, pool = hm.pool || {}, st = S.settings;
-    const size = st.session_size;
+    const hm = S.home, act = hm.active_session, pool = hm.pool || {}, poolB = hm.pool_b || {}, st = S.settings;
+    const size = st.session_size, sizeB = st.session_size_b || 2;
     const noQ = (pool.study || 0) === 0 && !act;
-    const main = h('button', {
-      class: 'btn primary hero', type: 'button', disabled: noQ,
-      onclick: () => (act ? resumeSession() : startSession({ mode: 'study' })),
+    const noB = !(poolB.study > 0);
+    const startA = h('button', {
+      class: act ? 'btn hero2' : 'btn primary hero', type: 'button', disabled: (pool.study || 0) === 0,
+      onclick: () => startSession({ mode: 'study' }),
     },
-      h('span', { text: act ? `続きから（${Math.min(act.current_index + 1, act.total)}/${act.total}）` : '学習を始める' }),
-      h('span', { class: 'hero-sub', text: act ? `${MODE_NAME[act.mode] || ''}・残り${Math.max(0, act.total - act.current_index)}問` : `${size}問・約${size}分` }));
+      h('span', { text: act ? '科目A を解く' : '学習を始める（科目A）' }),
+      h('span', { class: 'hero-sub', text: `${size}問・約${size}分` }));
+    const startB = h('button', {
+      class: act ? 'btn hero2' : 'btn primary hero b', type: 'button', disabled: noB,
+      onclick: () => startSession({ mode: 'study', part: 'B' }),
+    },
+      h('span', { text: act ? '科目B を解く' : '科目B を解く' }),
+      h('span', { class: 'hero-sub', text: noB ? '科目B の問題が未取り込み' : `${sizeB}問・約${sizeB * 5}分` }));
+    const resume = act ? h('button', { class: 'btn primary hero', type: 'button', onclick: resumeSession },
+      h('span', { text: `${act.part === 'B' ? '科目B ' : ''}続きから（${Math.min(act.current_index + 1, act.total)}/${act.total}）` }),
+      h('span', { class: 'hero-sub', text: `${partLabel(act.part)}・${MODE_NAME[act.mode] || ''}・残り${Math.max(0, act.total - act.current_index)}問` })) : null;
 
     const t = hm.today || { answered: 0, correct: 0, time_ms: 0 };
     const tiles = h('div', { class: 'tiles' },
@@ -303,30 +316,40 @@
         h('span', { class: 'pill', text: `正答率 ${pct(c.accuracy)}` }),
         h('span', { class: 'chev' }, icon('chev')))));
 
+    const hasMockB = (hm.mock_exams || []).some((e) => e.part === 'B') || (poolB.mock || 0) > 0;
     view.replaceChildren(h('div', { class: 'page' },
       h('div', { class: 'pagehead' }, h('h1', { text: 'FE Study' }), netPill()),
-      main,
+      resume,
+      act ? h('div', { class: 'row2 starts' }, startA, startB) : [startA, startB],
       noQ && h('p', { class: 'muted small', text: '出題できる問題がありません。問題インポーターを実行してください。' }),
       h('div', { class: 'row2' },
         h('button', { class: 'btn', type: 'button', disabled: !pool.review, onclick: () => startSession({ mode: 'review' }) },
-          h('span', { text: `間違えた問題を復習（${pool.review || 0}）` })),
-        h('button', { class: 'btn', type: 'button', disabled: !pool.mock, onclick: openMockSheet },
-          h('span', { text: '模擬試験' }), h('small', { text: '令和5〜8年' }))),
+          h('span', { text: `科目A 復習（${pool.review || 0}）` }), h('small', { text: '間違えた問題' })),
+        h('button', { class: 'btn', type: 'button', disabled: !poolB.review, onclick: () => startSession({ mode: 'review', part: 'B' }) },
+          h('span', { text: `科目B 復習（${poolB.review || 0}）` }), h('small', { text: '間違えた問題' }))),
+      h('button', { class: 'btn block stack', type: 'button', disabled: !pool.mock && !hasMockB, onclick: openMockSheet },
+        h('span', { text: '模擬試験' }), h('small', { class: 'muted', text: '令和5〜8年（科目A・科目B）' })),
       h('section', { class: 'card', 'aria-label': '今日の学習' },
         h('div', { class: 'section-title', text: '今日' }), tiles,
         t.time_ms ? h('p', { class: 'muted small center', style: { marginTop: '6px' }, text: `学習時間 ${fmtDur(t.time_ms)}` }) : null),
       weak.length ? h('section', null, h('div', { class: 'section-title', text: '苦手分野（タップで学習）' }), h('ul', { class: 'list' }, weak)) : null,
-      h('p', { class: 'muted small center', text: `学習プール ${pool.study || 0}問（未学習 ${pool.study_unseen || 0}）` })));
+      h('p', { class: 'muted small center', text: `科目A プール ${pool.study || 0}問（未学習 ${pool.study_unseen || 0}）${poolB.study ? ` ／ 科目B ${poolB.study}問（未学習 ${poolB.study_unseen || 0}）` : ''}` })));
   }
 
   function openMockSheet() {
-    const exams = (S.home && S.home.mock_exams) || [];
+    const all = (S.home && S.home.mock_exams) || [];
+    const exA = all.filter((e) => e.part !== 'B'), exB = all.filter((e) => e.part === 'B');
     const btn = (label, sub, body) => h('button', { class: 'rowbtn', type: 'button', onclick: () => { closeSheet(); startSession(body); } },
       h('span', { class: 'grow', text: label }), h('span', { class: 'muted small', text: sub }), h('span', { class: 'chev' }, icon('chev')));
+    const pb = (S.home && S.home.pool_b) || {};
     openSheet('模擬試験', [
-      h('p', { class: 'muted small', text: '終了まで正誤は表示されません。制限時間は1問90秒、合格目安は60%です。' }),
+      h('p', { class: 'muted small', text: '終了まで正誤は表示されません。合格目安は60%です。制限時間は科目Aが1問90秒、科目Bが1問5分です。' }),
+      h('div', { class: 'section-title', text: '科目A' }),
       btn('ランダム20問', '約30分', { mode: 'mock', size: 20 }),
-      ...exams.map((e) => btn(e.exam_label, `${e.count != null ? `${e.count}問・` : ''}約${Math.round(((e.count || 60) * 90) / 60)}分`, { mode: 'mock', exam_code: e.exam_code })),
+      ...exA.map((e) => btn(e.exam_label, `${e.count != null ? `${e.count}問・` : ''}約${Math.round(((e.count || 60) * 90) / 60)}分`, { mode: 'mock', exam_code: e.exam_code })),
+      (exB.length || pb.mock) ? h('div', { class: 'section-title', text: '科目B' }) : null,
+      (exB.length || pb.mock) ? btn('ランダム（全問から）', '最大12問', { mode: 'mock', part: 'B' }) : null,
+      ...exB.map((e) => btn(e.exam_label, `${e.count != null ? `${e.count}問・` : ''}約${(e.count || 6) * 5}分`, { mode: 'mock', part: 'B', exam_code: e.exam_code })),
       h('button', { class: 'btn block', type: 'button', onclick: closeSheet, text: '閉じる' }),
     ]);
   }
@@ -404,6 +427,7 @@
     const answeredNow = !mock && !!q.attempt;
     const progress = (Q.idx + (answeredNow ? 1 : 0)) / total;
 
+    const isB = q.part === 'B';
     const header = h('header', { class: 'qhead' },
       h('div', { class: 'qrow' },
         h('button', { class: 'btn ghost', type: 'button', onclick: onAbort }, icon('x'), '中断'),
@@ -412,19 +436,23 @@
       h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': Q.idx, 'aria-label': '進捗' },
         h('i', { style: { width: `${(progress * 100).toFixed(1)}%` } })),
       h('div', { class: 'qmeta' },
+        isB ? h('span', { class: 'chip', text: '科目B' }) : null,
         h('span', { class: 'qcat', text: q.category_name }),
+        q.sub_label ? h('span', { class: 'qsub', text: q.sub_label }) : null,
         q.is_calc ? h('span', { class: 'chip', text: '計算' }) : null,
         mock ? h('span', { class: 'chip', text: '模試' }) : null,
         netPill()));
 
+    const follow = isB && Q.idx > 0 && q.group_id && Q.s.questions[Q.idx - 1].group_id === q.group_id;
     const main = h('article', { class: 'qmain' },
-      h('p', { class: 'qbody', text: q.body }),
-      q.image_url ? h('button', { class: 'figure', type: 'button', 'aria-label': '図を拡大して表示', onclick: () => openViewer(q.image_url) },
-        h('img', { src: q.image_url, alt: '問題の図・表' })) : null,
-      q.image_url ? h('div', { class: 'fig-hint', text: 'タップで拡大（ピンチで拡大縮小）' }) : null,
+      q.body ? h('p', { class: 'qbody', text: q.body }) : null,
+      isB ? bImages(q, follow) : [
+        q.image_url ? h('button', { class: 'figure', type: 'button', 'aria-label': '図を拡大して表示', onclick: () => openViewer(q.image_url) },
+          h('img', { src: q.image_url, alt: '問題の図・表' })) : null,
+        q.image_url ? h('div', { class: 'fig-hint', text: 'タップで拡大（ピンチで拡大縮小）' }) : null],
       h('p', { class: 'qsource', text: q.source_label || '' }));
 
-    const choices = h('div', { class: `choices${allEmpty ? ' grid' : ''}`, role: 'group', 'aria-label': '選択肢' },
+    const choices = h('div', { class: `choices${allEmpty ? ' grid' : ''}${isB ? ' two' : ''}`, role: 'group', 'aria-label': '選択肢' },
       q.choices.map((c) => h('button', {
         class: 'choice', type: 'button', 'data-label': c.label, 'aria-label': c.text ? `${c.label}：${c.text}` : `選択肢 ${c.label}`,
         onclick: () => onPick(c.label),
@@ -439,10 +467,49 @@
     tick();
   }
 
+  // 科目B の問題画像。同一グループの2問目以降は共通の問題文（_stem_）を折りたたむ
+  function figBtn(url, i, n, all) {
+    return h('button', { class: 'figure bfig', type: 'button', 'aria-label': `問題画像 ${i + 1}/${n} を拡大して表示`, onclick: () => openViewer(all || [url], { alt: '問題画像' }) },
+      h('img', { src: url, alt: `問題画像 ${i + 1}/${n}`, loading: 'lazy' }));
+  }
+  function bImages(q, follow) {
+    const urls = imgList(q);
+    if (!urls.length) return null;
+    const stems = follow ? urls.filter((u) => /_stem_/.test(u)) : [];
+    const own = follow && stems.length ? urls.filter((u) => !/_stem_/.test(u)) : urls;
+    const out = [];
+    if (stems.length) {
+      const box = h('div', { class: 'stembox', hidden: true }, stems.map((u, i) => figBtn(u, i, stems.length, stems)));
+      const t = h('button', { class: 'stembtn', type: 'button', 'aria-expanded': 'false' },
+        h('span', { class: 'grow', text: '共通の問題文（前の設問と同じ）— タップで表示' }), h('span', { class: 'chev' }, icon('chev')));
+      t.addEventListener('click', () => {
+        const open = box.hidden; box.hidden = !open;
+        t.setAttribute('aria-expanded', String(open)); t.classList.toggle('open', open);
+      });
+      out.push(t, box);
+    }
+    own.forEach((u, i) => out.push(figBtn(u, i, own.length, own)));
+    out.push(h('div', { class: 'fig-hint', text: 'タップで拡大（ピンチで拡大縮小）' }));
+    return out;
+  }
+  // 書籍解説ビューア（回答後・結果・単問詳細から）
+  async function openExplanation(qid, urls, source) {
+    if (!urls || !urls.length) {
+      try {
+        const d = await api('GET', `/api/questions/${encodeURIComponent(qid)}`);
+        urls = d.explanation_image_urls; source = d.explanation_source;
+      } catch (e) { toast(e instanceof NetError ? 'オフラインのため解説を取得できません' : e.message); return; }
+    }
+    if (!urls || !urls.length) { toast('この問題の解説画像はありません'); return; }
+    openViewer(urls, { title: source || '解説（書籍付録）', alt: '解説' });
+  }
+  const explBtn = (qid, urls, source, has) => ((urls && urls.length) || has
+    ? h('button', { class: 'btn link', type: 'button', onclick: () => openExplanation(qid, urls, source), text: '解説を見る（書籍付録）' }) : null);
+
   function tick() {
     const Q = S.quiz;
     const el = $('#qtimer');
-    if (!Q || !el) return;
+    if (!Q || !el || !curQ()) return;
     if (Q.s.mode === 'mock' && Q.deadline != null) {
       const rem = Math.max(0, Math.ceil((Q.deadline - Date.now()) / 1000));
       el.textContent = fmtClock(rem * 1000);
@@ -451,7 +518,7 @@
     } else {
       const e = elapsed();
       el.textContent = fmtClock(e);
-      el.classList.toggle('over', e > (S.settings.target_sec || 90) * 1000);
+      el.classList.toggle('over', e > targetSecOf(curQ()) * 1000);
     }
   }
 
@@ -484,6 +551,7 @@
     if (!att) return;
 
     {
+      const book = explBtn(q.id, att.explanation_image_urls, att.explanation_source, q.has_book_explanation);
       const link = q.explanation_url ? h('a', { class: 'btn link', href: q.explanation_url, target: '_blank', rel: 'noopener', text: '過去問道場で解説を見る ↗' }) : null;
       if (att.pending) {
         fb.append(h('div', { class: 'fb pending' },
@@ -493,8 +561,8 @@
         const ok = att.is_correct;
         fb.append(h('div', { class: `fb ${ok ? 'ok' : 'ng'}` },
           h('div', { class: 'fb-head' }, icon(ok ? 'check' : 'x'), ok ? '正解' : `不正解（正解：${att.answer}）`),
-          h('p', { class: 'small muted', text: `所要時間 ${fmtDur(att.time_ms)}（目標 ${fmtDur((S.settings.target_sec || 90) * 1000)}）` }),
-          link));
+          h('p', { class: 'small muted', text: `所要時間 ${fmtDur(att.time_ms)}（目標 ${fmtDur(targetSecOf(q) * 1000)}）` }),
+          book, link));
       }
       bar.append(h('button', { class: 'btn primary', type: 'button', onclick: goNext, text: last ? '結果を見る' : '次へ' }));
       setTimeout(() => fb.scrollIntoView({ block: 'end', behavior: 'smooth' }), 30);
@@ -534,7 +602,9 @@
       const res = await submitAnswer(sid, body);
       if (S.quiz !== Q) return;
       q.attempt = res
-        ? { chosen: label, time_ms: t, is_correct: res.is_correct, answer: res.answer }
+        ? { chosen: label, time_ms: t, is_correct: res.is_correct, answer: res.answer,
+            explanation_image_urls: res.explanation_image_urls || (res.attempt && res.attempt.explanation_image_urls) || null,
+            explanation_source: res.explanation_source || (res.attempt && res.attempt.explanation_source) || null }
         : { chosen: label, time_ms: t, pending: true };
       if (res && res.explanation_url) q.explanation_url = res.explanation_url;
     } catch (e) {
@@ -588,7 +658,7 @@
     try {
       const res = await api('POST', `/api/sessions/${Q.s.id}/finish`, {}, { timeout: 15000 });
       Q.done = true;
-      S.result = { ...res, mode: Q.s.mode, session_id: Q.s.id };
+      S.result = { ...res, mode: Q.s.mode, session_id: Q.s.id, part: Q.s.part || 'A' };
       SS.set('fe.result', S.result);
       S.quiz = null; S.homeStale = true;
       go('#/result');
@@ -603,10 +673,19 @@
     }
   }
 
-  /* ---- 画像ビューア ---- */
-  function openViewer(src) {
-    const v = $('#viewer'), img = $('img', v);
-    img.src = src; img.classList.remove('zoom');
+  /* ---- 画像ビューア（複数画像を縦に並べて表示） ---- */
+  function openViewer(src, opts = {}) {
+    const v = $('#viewer'), box = $('#viewer-imgs'), sc = $('#viewer-scroll');
+    const urls = Array.isArray(src) ? src : [src];
+    box.replaceChildren(...urls.map((u, i) => {
+      const im = h('img', { src: u, alt: `${opts.alt || '問題の図（拡大）'} ${i + 1}/${urls.length}` });
+      im.addEventListener('click', () => sc.classList.toggle('zoom'));
+      return im;
+    }));
+    sc.classList.remove('zoom'); sc.scrollTop = 0;
+    const ti = $('#viewer-title');
+    ti.textContent = opts.title || ''; ti.hidden = !opts.title;
+    $('#viewer').setAttribute('aria-label', opts.title ? '解説の表示' : '図の拡大表示');
     v.hidden = false; document.body.classList.add('noscroll');
     history.pushState({ viewer: 1 }, '', location.href);
     $('#viewer-close').focus();
@@ -620,8 +699,7 @@
     if (history.state && history.state.viewer) history.back(); else hideViewer();
   }
   $('#viewer-close').addEventListener('click', closeViewer);
-  $('#viewer-zoom').addEventListener('click', () => $('#viewer img').classList.toggle('zoom'));
-  $('#viewer img').addEventListener('click', () => $('#viewer img').classList.toggle('zoom'));
+  $('#viewer-zoom').addEventListener('click', () => $('#viewer-scroll').classList.toggle('zoom'));
   window.addEventListener('popstate', hideViewer);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#viewer').hidden) closeViewer(); });
 
@@ -651,6 +729,8 @@
       correct: a.is_correct ?? q.is_correct ?? null,
       time: a.time_ms ?? q.time_ms ?? 0,
       answer: a.answer ?? q.answer ?? null,
+      expl: a.explanation_image_urls ?? q.explanation_image_urls ?? null,
+      explSrc: a.explanation_source ?? q.explanation_source ?? null,
     };
   }
 
@@ -672,13 +752,15 @@
     const rows = (r.questions || []).map((q, i) => {
       const x = qres(q);
       const cls = x.chosen == null ? '' : x.correct ? 'ok' : 'ng';
-      return h('li', null, h('button', { class: `qrow2 ${cls}`, type: 'button', onclick: () => go(`#/q/${encodeURIComponent(q.id)}`) },
+      const book = explBtn(q.id, x.expl, x.explSrc, q.has_book_explanation);
+      if (book) book.classList.add('small');
+      return h('li', { class: book ? 'withexp' : null }, h('button', { class: `qrow2 ${cls}`, type: 'button', onclick: () => go(`#/q/${encodeURIComponent(q.id)}`) },
         h('span', { class: 'mk', 'aria-label': x.chosen == null ? '未回答' : x.correct ? '正解' : '不正解' }, x.chosen == null ? icon('dash') : icon(x.correct ? 'check' : 'x')),
-        h('span', { class: 'grow' }, h('span', { text: `${i + 1}. ${q.exam_label || ''} 問${q.number ?? ''}` }), h('br'), h('span', { class: 'small muted', text: q.category_name || '' })),
-        h('span', { class: 't' }, x.chosen == null ? '未回答' : [`${x.chosen}`, h('br'), fmtDur(x.time)])));
+        h('span', { class: 'grow' }, h('span', { text: `${i + 1}. ${q.exam_label || ''} 問${q.number ?? ''}${q.sub_label ? ` ${q.sub_label}` : ''}` }), h('br'), h('span', { class: 'small muted', text: q.category_name || '' })),
+        h('span', { class: 't' }, x.chosen == null ? '未回答' : [`${x.chosen}`, h('br'), fmtDur(x.time)])), book);
     });
     view.replaceChildren(h('div', { class: 'page' },
-      h('div', { class: 'pagehead' }, h('h1', { text: `${MODE_NAME[r.mode] || ''}の結果` }), netPill()),
+      h('div', { class: 'pagehead' }, h('h1', { text: `${r.part === 'B' ? '科目B ' : ''}${MODE_NAME[r.mode] || ''}の結果` }), netPill()),
       h('section', { class: 'card score' },
         h('div', { class: 'big' }, `${r.correct}`, h('small', { text: ` / ${r.total} 問正解` })),
         h('div', { class: 'muted', text: `正答率 ${pct(rate)}` }),
@@ -701,17 +783,22 @@
 
   /* ================= 成績 ================= */
   async function viewStats(ctx, args) {
-    const tab = args[0] === 'time' ? 'time' : 'cat';
+    const tab = args[0] === 'time' ? 'time' : args[0] === 'b' ? 'b' : 'cat';
+    const tpart = ['A', 'B'].includes(args[1]) ? args[1] : 'all';
     const wrap = h('div', { class: 'page' },
       h('div', { class: 'pagehead' }, h('h1', { text: '成績' }), netPill()),
-      h('nav', { class: 'subtabs', 'aria-label': '成績の表示切替' },
-        h('a', { href: '#/stats', 'aria-current': tab === 'cat' ? 'page' : null, text: '分野別' }),
-        h('a', { href: '#/stats/time', 'aria-current': tab === 'time' ? 'page' : null, text: '時間分析' })));
+      h('nav', { class: 'subtabs three', 'aria-label': '成績の表示切替' },
+        h('a', { href: '#/stats', 'aria-current': tab === 'cat' ? 'page' : null, text: '科目A' }),
+        h('a', { href: '#/stats/b', 'aria-current': tab === 'b' ? 'page' : null, text: '科目B' }),
+        h('a', { href: '#/stats/time', 'aria-current': tab === 'time' ? 'page' : null, text: '時間分析' })),
+      tab === 'time' ? h('div', { class: 'seg', role: 'group', 'aria-label': '時間分析の対象' },
+        [['all', '全体'], ['A', '科目A'], ['B', '科目B']].map(([k, n]) => h('button', {
+          type: 'button', 'aria-pressed': String(tpart === k), onclick: () => go(`#/stats/time/${k}`), text: n }))) : null);
     const body = h('div', { class: 'page', style: { padding: 0 } }, h('div', { class: 'skeleton', text: '読み込み中…' }));
     wrap.append(body);
     view.replaceChildren(wrap);
     try {
-      const frag = tab === 'cat' ? await statsCategories() : await statsTime();
+      const frag = tab === 'cat' ? await statsCategories() : tab === 'b' ? await statsB() : await statsTime(tpart);
       if (!ctx.alive()) return;
       body.replaceChildren(...frag);
     } catch (e) {
@@ -742,9 +829,32 @@
     });
   }
 
-  async function statsTime() {
-    const d = await api('GET', '/api/stats/time');
-    const target = (S.settings.target_sec || 90) * 1000;
+  async function statsB() {
+    const d = await api('GET', '/api/stats/b');
+    const row = (nm, x, onclick) => {
+      const inner = [
+        h('div', { class: 'top' }, h('span', { class: 'nm', text: nm }), h('span', { class: 'pc', text: pct(x.accuracy) })),
+        hbar(x.accuracy || 0),
+        h('div', { class: 'meta' }, h('span', { text: `学習済 ${x.seen}/${x.total}` }), h('span', { text: `平均 ${fmtDur(x.avg_time_ms)}` }))];
+      return h('li', null, onclick
+        ? h('button', { class: 'catrow', type: 'button', 'aria-label': `${nm} の問題を学習する`, onclick }, inner)
+        : h('div', { class: 'catrow static' }, inner));
+    };
+    const topics = d.topics || [], tags = d.tags || [], diff = d.difficulty || [];
+    const out = [];
+    out.push(h('section', null, h('div', { class: 'fieldhead' }, h('h2', { text: 'テーマ別' }), h('span', { class: 'agg', text: 'タップで学習' })),
+      h('ul', { class: 'list' }, topics.length ? topics.map((x) => row(x.name || B_TOPIC_NAME[x.b_topic] || x.b_topic, x,
+        () => startSession({ mode: 'study', part: 'B', b_topics: [x.b_topic] }))) : h('li', { class: 'muted center', text: '科目Bの問題がありません' }))));
+    if (tags.length) out.push(h('section', null, h('div', { class: 'fieldhead' }, h('h2', { text: 'タグ別' })),
+      h('ul', { class: 'list' }, tags.map((x) => row(x.tag, x)))));
+    if (diff.length) out.push(h('section', null, h('div', { class: 'fieldhead' }, h('h2', { text: '難易度別' })),
+      h('ul', { class: 'list' }, diff.map((x) => row(x.difficulty || '未設定', x)))));
+    return out;
+  }
+
+  async function statsTime(part = 'all') {
+    const d = await api('GET', `/api/stats/time?part=${part}`);
+    const target = (part === 'B' ? (S.settings.target_sec_b || 300) : (S.settings.target_sec || 90)) * 1000;
     const o = d.overall || {};
     const out = [];
     out.push(h('div', { class: 'cards3' },
@@ -762,7 +872,7 @@
     }
 
     const cv = d.calc_vs_noncalc;
-    if (cv) {
+    if (cv && part !== 'B') {
       const card = (name, x) => h('div', { class: 'stat' },
         h('div', { class: 'l', text: name }),
         h('div', { class: 'v', text: x && x.n ? fmtDur(x.avg_ms) : '—' }),
@@ -859,7 +969,7 @@
         },
           h('span', { class: 'mk', 'aria-label': x.chosen == null ? '未回答' : x.is_correct ? '正解' : '不正解' }, x.chosen == null ? icon('dash') : icon(x.is_correct ? 'check' : 'x')),
           h('span', { class: 'grow' }, h('span', { text: x.label }), h('br'),
-            h('span', { class: 'small muted', text: `${x.category_name}・${MODE_NAME[x.mode] || ''}${x.chosen ? `・${x.chosen}${x.answer && x.answer !== x.chosen ? `→正解${x.answer}` : ''}` : ''}` })),
+            h('span', { class: 'small muted', text: `${x.part === 'B' ? '科目B・' : ''}${x.category_name}・${MODE_NAME[x.mode] || ''}${x.chosen ? `・${x.chosen}${x.answer && x.answer !== x.chosen ? `→正解${x.answer}` : ''}` : ''}` })),
           h('span', { class: 't' }, fmtDur(x.time_ms), h('br'), fmtDateTime(x.answered_at))))));
         empty.hidden = hist.items.length > 0;
         more.hidden = hist.done; more.disabled = false;
@@ -882,7 +992,7 @@
     const answer = d.answer ?? (lastAtt && lastAtt.answer) ?? null;
     const lastChosen = lastAtt ? lastAtt.chosen : null;
     const allEmpty = (d.choices || []).every((c) => !c.text);
-    const choices = h('div', { class: `choices${allEmpty ? ' grid' : ''}`, style: { padding: '8px 0' } }, (d.choices || []).map((c) => {
+    const choices = h('div', { class: `choices${allEmpty ? ' grid' : ''}${d.part === 'B' ? ' two' : ''}`, style: { padding: '8px 0' } }, (d.choices || []).map((c) => {
       const isAns = answer && c.label === answer;
       const isMine = lastChosen && c.label === lastChosen;
       const cls = isAns ? 'correct' : isMine ? 'wrong' : answer ? 'dim' : '';
@@ -896,10 +1006,12 @@
       h('div', { class: 'pagehead' },
         h('button', { class: 'btn small', type: 'button', onclick: () => (history.length > 1 ? history.back() : go('#/history')) }, icon('back'), '戻る'),
         h('span', { class: 'muted small', text: d.category_name || '' })),
-      h('h2', { text: `${d.exam_label || ''} 問${d.number ?? ''}${d.is_calc ? '（計算）' : ''}` }),
-      h('p', { class: 'qbody', text: d.body }),
-      d.image_url ? h('button', { class: 'figure', type: 'button', 'aria-label': '図を拡大して表示', onclick: () => openViewer(d.image_url) }, h('img', { src: d.image_url, alt: '問題の図・表' })) : null,
+      h('h2', { text: `${d.part === 'B' ? '科目B ' : ''}${d.exam_label || ''} 問${d.number ?? ''}${d.sub_label ? ` ${d.sub_label}` : ''}${d.is_calc ? '（計算）' : ''}` }),
+      d.body ? h('p', { class: 'qbody', text: d.body }) : null,
+      d.part === 'B' ? bImages(d, false)
+        : (d.image_url ? h('button', { class: 'figure', type: 'button', 'aria-label': '図を拡大して表示', onclick: () => openViewer(d.image_url) }, h('img', { src: d.image_url, alt: '問題の図・表' })) : null),
       choices,
+      explBtn(d.id, d.explanation_image_urls, d.explanation_source, false),
       d.explanation_url ? h('a', { class: 'btn link', href: d.explanation_url, target: '_blank', rel: 'noopener', text: '過去問道場で解説を見る ↗' }) : null,
       h('p', { class: 'qsource', text: d.source_label || '' }),
       attRows.length ? h('section', null, h('div', { class: 'section-title', text: '回答履歴' }), h('ul', { class: 'card list', style: { gap: 0 } }, attRows)) : null));
@@ -965,6 +1077,8 @@
             return h('label', { class: 'chk sub' }, cb, h('span', { class: 'grow', text: c.name }), h('span', { class: 'badge', text: String(c.total) }));
           }));
       });
+      const bTopics = Array.isArray(st.b_topics) && st.b_topics.length ? st.b_topics : ['pseudo', 'security'];
+      const tB = Math.min(8, Math.max(3, Math.round((st.target_sec_b || 300) / 60)));
       const fontOpts = [0.9, 1.0, 1.15, 1.3], fontName = { 0.9: '小', 1: '標準', 1.15: '大', 1.3: '特大' };
       const themeName = { auto: '自動', light: 'ライト', dark: 'ダーク' };
       root.replaceChildren(
@@ -977,6 +1091,28 @@
         h('section', { class: 'card setgroup' },
           h('div', { class: 'lbl' }, '1回の問題数', h('small', { class: 'muted', style: { display: 'block' }, text: `${st.session_size}問 ≒ 約${st.session_size}分` })),
           seg('session_size', [5, 8, 10, 15], (o) => `${o}問`)),
+        h('section', { class: 'card setgroup', 'aria-label': '科目B の設定' },
+          h('h2', { text: '科目B' }),
+          h('div', { class: 'lbl' }, '1回の問題数', h('small', { class: 'muted', style: { display: 'block' }, text: `${st.session_size_b}問 ≒ 約${st.session_size_b * 5}分` })),
+          seg('session_size_b', [1, 2, 3, 4], (o) => `${o}問`),
+          h('div', { class: 'lbl', style: { marginTop: '6px' } }, 'テーマ', h('small', { class: 'muted', style: { display: 'block' }, text: bTopics.length === 1 ? `${B_TOPIC_NAME[bTopics[0]]}のみ出題` : '両方から出題' })),
+          Object.entries(B_TOPIC_NAME).map(([k, n]) => {
+            const cb = h('input', { type: 'checkbox' });
+            cb.checked = bTopics.includes(k);
+            cb.addEventListener('change', () => {
+              const cur = new Set(bTopics);
+              if (cb.checked) cur.add(k); else cur.delete(k);
+              if (!cur.size) { toast('テーマは1つ以上選んでください'); return draw(); }
+              setSetting('b_topics', cur.size === 2 ? [] : [...cur]); draw();
+            });
+            return h('label', { class: 'chk' }, cb, h('span', { class: 'grow', text: n }));
+          }),
+          h('div', { class: 'srow' },
+            h('div', { class: 'lbl' }, '目標時間（1問）', h('small', { text: '本試験は100分で20問＝5分。超えると時計の色が変わります' })),
+            h('div', { class: 'stepper' },
+              h('button', { class: 'btn', type: 'button', 'aria-label': '1分短くする', disabled: tB <= 3, onclick: () => { setSetting('target_sec_b', (tB - 1) * 60); draw(); }, text: '−' }),
+              h('b', { 'aria-live': 'polite', text: `${tB}分` }),
+              h('button', { class: 'btn', type: 'button', 'aria-label': '1分長くする', disabled: tB >= 8, onclick: () => { setSetting('target_sec_b', (tB + 1) * 60); draw(); }, text: '＋' })))),
         h('section', { class: 'card setgroup' },
           h('div', { class: 'lbl' }, '出題する分野', h('small', { class: 'muted', style: { display: 'block' }, text: st.category_ids && st.category_ids.length ? `${selected.size}分野 ・ ${totalQ}問から出題` : `全分野 ・ ${totalQ}問から出題` })),
           fieldBlocks),
@@ -991,7 +1127,7 @@
             type: 'button', 'aria-pressed': String(st.theme === o), onclick: () => { setSetting('theme', o); draw(); }, text: themeName[o] })))),
         h('section', { class: 'card' },
           h('div', { class: 'srow' },
-            h('div', { class: 'lbl' }, '目標時間（1問）', h('small', { text: '本試験は1問あたり90秒。超えると時計の色が変わります' })),
+            h('div', { class: 'lbl' }, '目標時間（科目A・1問）', h('small', { text: '本試験は1問あたり90秒。超えると時計の色が変わります' })),
             h('div', { class: 'stepper' },
               h('button', { class: 'btn', type: 'button', 'aria-label': '15秒短くする', disabled: st.target_sec <= 30, onclick: () => { setSetting('target_sec', Math.max(30, st.target_sec - 15)); draw(); }, text: '−' }),
               h('b', { 'aria-live': 'polite', text: `${st.target_sec}秒` }),

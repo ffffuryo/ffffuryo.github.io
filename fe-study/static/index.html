@@ -40,7 +40,8 @@ if(u.font_scale)r.style.setProperty('--fscale',u.font_scale);}catch(e){}
     <button type="button" class="btn small" id="viewer-zoom">拡大 / 全体</button>
     <button type="button" class="btn small" id="viewer-close">閉じる</button>
   </div>
-  <div class="viewer-scroll"><img alt="問題の図（拡大）"></div>
+  <div class="viewer-title" id="viewer-title" hidden></div>
+  <div class="viewer-scroll" id="viewer-scroll"><div id="viewer-imgs"></div></div>
 </div>
 
 <noscript><p style="padding:1rem">このアプリは JavaScript が必要です。</p></noscript>

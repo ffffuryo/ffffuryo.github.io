@@ -83,6 +83,7 @@ a { color: var(--accent); }
 
 /* ---- ページ共通 ---- */
 .page { max-width: 40em; margin: 0 auto; padding: calc(var(--sat) + 14px) 16px 16px; display: flex; flex-direction: column; gap: 18px; }
+.page > .page { width: 100%; }
 .pagehead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .section-title { font-size: .9rem; color: var(--muted); font-weight: 700; letter-spacing: .02em; margin-bottom: 6px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
@@ -114,6 +115,38 @@ button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .row2 .btn { flex-direction: column; min-height: 64px; gap: 0; padding: 8px; text-align: center; }
 .row2 .btn small { font-weight: 500; font-size: .75rem; color: var(--muted); }
+
+/* ---- 科目B ---- */
+.hero + .hero { margin-top: -6px; }
+.row2.starts .hero2 { flex-direction: column; min-height: 72px; gap: 0; padding: 8px; text-align: center; }
+.row2.starts .hero-sub { font-size: .75rem; font-weight: 500; color: var(--muted); }
+.hero.b { background: var(--ok-text); border-color: var(--ok-text); }
+:root[data-theme="dark"] .hero.b { background: #5b8fb0; border-color: #5b8fb0; }
+.hero:disabled .hero-sub { opacity: 1; }
+.qsub { font-weight: 600; color: var(--text); }
+.bfig { margin-top: 10px; }
+.bfig:first-child { margin-top: 14px; }
+.stembtn { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; margin-top: 12px; padding: 6px 12px; text-align: left;
+  background: var(--surface2); border: 1px dashed var(--border); border-radius: 10px; cursor: pointer; font-size: .9rem; line-height: 1.4; }
+.stembtn .grow { flex: 1; min-width: 0; }
+.stembtn .chev { color: var(--muted); transition: transform .15s; }
+.stembtn.open .chev { transform: rotate(90deg); }
+.stembox[hidden] { display: none; }
+.choices.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.choices.two .choice { min-height: 56px; padding: 8px 10px; gap: 8px; }
+.choices.two .choice .clabel { width: 1.9rem; height: 1.9rem; font-size: .95rem; }
+.choices.two .choice .ctext { font-size: .88rem; line-height: 1.45; }
+.choices.two .choice .cmark { flex-direction: column; font-size: .7rem; }
+.choices.two.grid .choice { min-height: 60px; }
+.choices.two.grid .clabel { width: auto; height: auto; font-size: 1.5rem; }
+.fb .btn.link { min-height: 44px; }
+.btn.stack { flex-direction: column; gap: 0; min-height: 56px; padding: 6px 10px; text-align: center; }
+.btn.stack small { font-size: .75rem; font-weight: 500; }
+.withexp { display: flex; flex-direction: column; gap: 4px; }
+.withexp .btn.small { min-height: 40px; }
+.subtabs.three { grid-template-columns: repeat(3, 1fr); }
+.catrow.static { cursor: default; }
+.catrow.static:active { background: var(--surface); }
 
 /* ---- バー ---- */
 .bar { height: 8px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
@@ -341,7 +374,10 @@ dialog#sheet::backdrop { background: rgba(20, 20, 20, .5); }
 .viewer-bar .btn { background: #2b2f35; color: #e6e3dc; border-color: #444; }
 .viewer-scroll { flex: 1; overflow: auto; touch-action: pan-x pan-y pinch-zoom; -webkit-overflow-scrolling: touch; padding: 0 0 var(--sab); }
 .viewer-scroll img { display: block; width: 100%; height: auto; background: #f6f4ee; touch-action: pan-x pan-y pinch-zoom; }
-.viewer-scroll img.zoom { width: 220%; max-width: none; }
+.viewer-scroll img + img { margin-top: 6px; }
+.viewer-scroll.zoom img { width: 220%; max-width: none; }
+.viewer-title { padding: 0 14px 6px; font-size: .72rem; line-height: 1.5; color: #b9b6ae; }
+.viewer-title[hidden] { display: none; }
 
 .skeleton { padding: 40px 16px; text-align: center; color: var(--muted); }
 .errbox { text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; padding: 40px 16px; }
