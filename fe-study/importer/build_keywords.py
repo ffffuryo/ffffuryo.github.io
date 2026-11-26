@@ -96,7 +96,10 @@ def join_line(a: str, b: str) -> str:
 def clean_kw(k: str) -> str | None:
     k = k.strip().strip("。．.・")
     k = re.sub(r"\s+", " ", k)
-    if len(k) < 2 or k in STOP:
+    k = re.sub(r"(ほか|など|等)$", "", k)
+    if len(k) < 2 or k in STOP or len(k) > 30:
+        return None
+    if re.search(r"を|は何か|について|に関する(?!理論)|が含む", k):
         return None
     if re.fullmatch(r"[\d\s\.\-]+", k):
         return None
@@ -130,7 +133,7 @@ def build(pdf_path: Path) -> dict:
     def flush_terms():
         nonlocal term_buf
         if term_buf:
-            for t in split_top(term_buf):
+            for t in split_top(re.sub(r"〔[^〕]*〕", "，", term_buf)):
                 for e in expand_term(t):
                     add(e, 2)
         term_buf = None
