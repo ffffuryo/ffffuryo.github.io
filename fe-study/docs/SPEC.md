@@ -238,3 +238,69 @@ total は study プール数。accuracy は各問題の **最新** 回答で算�
 - 復習: 「間違えた問題（23）」ボタン。
 - 目に優しい配色: ライト = 背景 #f4f1ea・文字 #33302b、ダーク = 背景 #1f2124・文字 #d6d3cc。純白/純黒を避け、コントラストは WCAG AA 以上を維持。正解=落ち着いた緑 #4f8a5b、不正解=くすんだ赤 #b5564b。本文 17px 基準、行間 1.8、本文最大幅 40em。システムフォント（"Hiragino Sans","Noto Sans JP",sans-serif）。
 - スマホ: viewport 設定、`env(safe-area-inset-*)`、ホーム画面追加用 manifest。ビルド不要の素の HTML/CSS/JS（ES2020）。
+
+---
+
+# 6. 科目B 対応（追補）
+
+## 6.0 ソースと権利
+| ファイル（`data/kamoku_b_src/`、git 管理外） | 出典 | 内容 | pool |
+|---|---|---|---|
+| `fe_kamoku_b_set_sample_qs_2.pdf` | IPA 科目B サンプル問題（2022、20問） | 問題 | study |
+| `2023r05_fe_kamoku_b_qs_2.pdf` | IPA 令和5年度 科目B 公開問題（6問） | 問題 | **mock** |
+| `2024r06_fe_kamoku_b_qs_2.pdf` | IPA 令和6年度 科目B 公開問題（6問） | 問題 | **mock** |
+| `FE_B-R04sample_v2.pdf` | 翔泳社『出るとこだけ！基本情報技術者［科目B］第4版』付録 | 上記サンプル20問の解説・正解・難易度・タグ | — |
+| `FE_B-R05sample_v3.pdf` / `FE_B-R06sample.pdf` | 同 付録 | 令和5/6年 公開問題の解説 | — |
+| `FE_B-4th-furoku2_v2.pdf` | 同 付録2 | 情報セキュリティのサンプル/公開問題 12問＋解説 | study（出典が令和5〜8年なら mock） |
+| `FE_B-4th-furoku3_v2.pdf` | 同 付録3 | 旧SG午後などからの情報セキュリティ模擬問題 12問＋解説（1問に複数設問あり） | study |
+| `FE_B-4th-furoku4.pdf` | 同 付録4 | 情報セキュリティ問題（問49〜）＋解説 | study |
+
+- 書籍付録は「私的使用以外の複製・公衆送信禁止」。**書籍由来のテキスト・画像は `data/` にのみ保存し、リポジトリ（テスト fixture 含む）に一切入れない。** アプリは Tailscale 内の個人利用に限る（funnel 禁止）。
+- IPA 問題は出典表示。正解は IPA 解答例（www.ipa.go.jp から取得可）と書籍の表で突き合わせる。
+
+## 6.1 スキーマ追加（init_db で既存 DB に ALTER TABLE する。冪等）
+```sql
+ALTER TABLE questions ADD COLUMN part TEXT NOT NULL DEFAULT 'A';      -- 'A' | 'B'
+ALTER TABLE questions ADD COLUMN images TEXT;              -- JSON: 問題画像パス配列（data/images 相対、表示順）。B で使用
+ALTER TABLE questions ADD COLUMN group_id TEXT;            -- 共通の問題文を持つ設問のグループ（furoku3 など）。単独問題は NULL
+ALTER TABLE questions ADD COLUMN sub_label TEXT;           -- '設問3(2)' 等
+ALTER TABLE questions ADD COLUMN b_topic TEXT;             -- 'pseudo'（擬似言語）| 'security'（情報セキュリティ）
+ALTER TABLE questions ADD COLUMN tags TEXT;                -- JSON: ["トレース","再帰","一次元配列"] 等
+ALTER TABLE questions ADD COLUMN difficulty TEXT;          -- 'やさしい'|'ふつう'|'難しい'|NULL
+ALTER TABLE questions ADD COLUMN explanation_images TEXT;  -- JSON: 書籍解説ページ画像パス配列（ローカルのみ）
+ALTER TABLE questions ADD COLUMN explanation_source TEXT;  -- '『出るとこだけ！基本情報技術者［科目B］第4版』付録1' 等
+CREATE INDEX IF NOT EXISTS idx_q_part ON questions(part, pool);
+```
+- 科目B の id: `feb-{src}-q{NN}[-{sub}]`（src: `sample`,`05_haru`,`06_haru`,`furoku2`,`furoku3`,`furoku4`）。
+- B の category_id: pseudo → 2（アルゴリズムとプログラミング）、security → 11（セキュリティ）。
+- B の choices は ア〜コ（最大10個）。`text` は短ければ入れ、組合せ表などは空。`explanation_url` は空文字可（過去問道場の科目B URL は未確認のため）。
+- 同一問題が IPA 版と付録版の両方にある場合は IPA 版を残し、付録の解説画像だけを紐付ける（重複出題しない）。
+
+## 6.2 設定追加
+| key | 既定 | 意味 |
+|---|---|---|
+| session_size_b | 2 | 科目B 1回の問題数（1〜4。1問≒5分） |
+| target_sec_b | 300 | 科目B 1問の目標時間（100分/20問） |
+| b_topics | [] | 空=両方。["pseudo"] / ["security"] |
+
+## 6.3 API 変更
+- `POST /api/sessions` に `"part": "A"|"B"`（既定 "A"）。B は settings の session_size_b / b_topics を使う（body の `size`/`b_topics` で上書き可）。`include_calc`・`category_ids` は B には適用しない。
+  - B の出題単位は **グループ**（group_id があれば同グループの設問を連続で、sub_label 順に出す）。size はグループ数で数える。
+  - 優先順位は A と同じ（wrong → unseen → slow → mastered）、target は target_sec_b。
+  - `mode:"mock", part:"B"`: B の mock プール。exam_code 指定でその回、未指定で全 mock（最大 12 問）。制限時間 = 問題数 × 300 秒。
+  - `mode:"review", part:"B"`: B の誤答のみ。
+- セッションオブジェクト: `part` を追加。各問題に `part`, `image_urls`（images の URL 配列。A は image_url を従来どおり、B は image_urls を使う）, `sub_label`, `group_id`, `b_topic`, `tags`, `difficulty`, `has_book_explanation`（bool）を追加。
+  - 回答で正解が開示されるタイミング（study/review は回答後、mock は finish 後）に、attempt 内へ `explanation_image_urls` と `explanation_source` を含める。
+- `GET /api/home`: `pool_b: {"study":N,"study_unseen":N,"mock":N,"review":N}` を追加。`mock_exams` の各要素に `part` を追加（A と B の回を両方列挙）。`active_session` に `part` を追加。
+- `GET /api/stats/categories?part=A`（既定 A、従来どおり）。
+- `GET /api/stats/b` → `{"topics":[{"b_topic":"pseudo","name":"擬似言語","total":20,"seen":5,"accuracy":0.6,"avg_time_ms":250000}], "tags":[{"tag":"トレース","total":15,"seen":4,"accuracy":0.5,"avg_time_ms":...}], "difficulty":[{"difficulty":"難しい",...}]}`（study プール、最新回答ベース）。
+- `GET /api/stats/time?part=A|B|all`（既定 all）。
+- `GET /api/history` の各要素に `part`。`GET /api/questions/{id}` に B 項目と、開示可能なら `explanation_image_urls`。
+
+## 6.4 UI 追加
+- ホーム: 主ボタン（科目A）の下に同格の大ボタン「科目B を解く（2問・約10分）」。「続きから」は part に関係なく active を 1 つ表示。
+- 模試シート: 科目A / 科目B の回を区別して表示（B は令和5年・令和6年、各6問・30分）。
+- 出題画面（B）: 問題画像を縦に並べて全幅表示（各画像タップで全画面ズーム）。目標時間 5 分。選択肢ボタンは数に応じて 2 列グリッド（ア〜コ）。sub_label があれば見出しに表示（「設問3(2)」）。同一グループの 2 問目以降は「前の設問と同じ問題文」と表示し、問題文画像は折りたたみ（タップで展開）。
+- 回答後: 正誤・正解に加え「解説を見る（書籍付録）」ボタン → 解説画像を縦に並べた全画面ビューア。過去問道場リンクは explanation_url が空なら出さない。
+- 成績: 「科目A / 科目B」切替。B は テーマ（擬似言語 / 情報セキュリティ）、タグ別（トレース・再帰・配列…）、難易度別の正答率と平均時間。
+- 設定: 「科目B」セクション（1回の問題数 1〜4、テーマ選択、目標時間）。
