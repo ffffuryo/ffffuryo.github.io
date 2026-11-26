@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS questions (
   source_url TEXT NOT NULL,        -- IPA PDF URL
   explanation_url TEXT NOT NULL,   -- 過去問道場の解説 URL
   parse_confidence REAL NOT NULL DEFAULT 1.0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_q_pool_cat ON questions(pool, category_id);
 
@@ -91,8 +91,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   current_elapsed_ms INTEGER NOT NULL DEFAULT 0,  -- 回答中の問題の経過時間（オートセーブ用）
   time_limit_sec INTEGER,          -- 模試のみ
   options TEXT NOT NULL DEFAULT '{}',  -- JSON: 作成時の設定スナップショット
-  started_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   ended_at TEXT
 );
 
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   chosen TEXT,                     -- NULL = 未回答（模試の時間切れ等）
   is_correct INTEGER NOT NULL,
   time_ms INTEGER NOT NULL,
-  answered_at TEXT NOT NULL DEFAULT (datetime('now')),
+  answered_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   UNIQUE(session_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS idx_att_q ON attempts(question_id);
