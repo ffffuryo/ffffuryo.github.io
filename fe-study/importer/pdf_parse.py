@@ -82,7 +82,18 @@ def _save_png(img: Image.Image, out_path: Path):
     # 16 階調に量子化してファイルサイズを抑える（文字・図の可読性は保つ）
     g = g.point(lambda v: min(255, (v // 16) * 17 + (8 if v > 240 else 0)))
     g = g.point(lambda v: 255 if v >= 232 else v)
+    g = _trim_margins(g)
     g.save(out_path, optimize=True)
+
+
+def _trim_margins(g: Image.Image, pad: int = 8) -> Image.Image:
+    """上下左右の白い余白を切り落とす（スマホ幅で文字を少しでも大きく表示するため）。"""
+    from PIL import ImageOps
+    bbox = ImageOps.invert(g).point(lambda v: 255 if v > 40 else 0).getbbox()
+    if not bbox:
+        return g
+    l, t, r, b = bbox
+    return g.crop((max(0, l - pad), max(0, t - pad), min(g.width, r + pad), min(g.height, b + pad)))
 
 
 def _stack(images: list[Image.Image], gap: int = 12) -> Image.Image:
@@ -280,35 +291,44 @@ def find_scanned_headers(pages: list[_Page]) -> list[tuple[int, Band, int]]:
     """全ページから「問N」見出し行を検出して (page_index, band, crop_top) を出現順に返す。"""
     hs = [b.h for p in pages for b in p.bands if b.h < 40]
     th = float(np.median(hs)) if hs else 19.0
-    cands = []
-    for p in pages:
-        tb = [b for b in p.bands if 0.6 * th <= b.h <= 1.5 * th]
-        if not tb:
-            continue
-        pm = min(b.x0 for b in tb)
-        for b in p.bands:
-            if b.x0 > pm + 0.5 * th:
+    def collect(near):
+        out = []
+        for p in pages:
+            tb = [b for b in p.bands if 0.6 * th <= b.h <= 1.5 * th]
+            if not tb:
                 continue
-            if 0.6 * th <= b.h <= 1.5 * th:
-                if _is_header_token(p.ink, b):
-                    cands.append((p.index, b, b.y0))
-            elif b.h > 1.5 * th:
-                for sb in _sub_bands(p.ink, b, th):
-                    if abs(sb.x0 - b.x0) <= 3 and _is_header_token(p.ink, sb):
-                        top = b.y0 if b.y0 >= sb.y0 - 1.5 * th else sb.y0
-                        cands.append((p.index, sb, top))
-                        break
+            for b in p.bands:
+                if not near(p, tb, b):
+                    continue
+                if 0.6 * th <= b.h <= 1.5 * th:
+                    if _is_header_token(p.ink, b):
+                        out.append((p.index, b, b.y0))
+                elif b.h > 1.5 * th:
+                    for sb in _sub_bands(p.ink, b, th):
+                        if abs(sb.x0 - b.x0) <= 3 and _is_header_token(p.ink, sb):
+                            top = b.y0 if b.y0 >= sb.y0 - 1.5 * th else sb.y0
+                            out.append((p.index, sb, top))
+                            break
+        return out
+
+    # 1 回目: ページ内で最も左にある行を候補に -> 見出しの x 位置（文書全体の中央値）を得る
+    cands = collect(lambda p, tb, b: b.x0 <= min(x.x0 for x in tb) + 0.5 * th)
     if not cands:
         return []
-    # 見出しの x 位置はほぼ一定（見開きで左右に数 px ずれる程度）
     mx = float(np.median([b.x0 for _, b, _ in cands]))
-    cands = [c for c in cands if abs(c[1].x0 - mx) <= 1.0 * th]
-    # 行頭の文字が「問」であること: 他の候補と似た字形（類似度 0.75 超）が 2 つ以上あるか
+    # 2 回目: 見出しの x 位置にある行（見開きで左右に数 px ずれる程度。余白のゴミに影響されない）
+    cands = collect(lambda p, tb, b: abs(b.x0 - mx) <= 1.0 * th)
+    # 行頭の文字が「問」であること。多数派の字形（「問」。1桁/2桁で字幅が違うので複数の型がある）
+    # に十分似ているものだけ残す。注意事項の「6.」「7.」等の少数派の集まりは除外される。
     if len(cands) >= 10:
         F = np.array([_glyph_feature(pages[i].ink, b) for i, b, _ in cands])
         S = F @ F.T
-        friends = (S > 0.75).sum(1) - 1
-        cands = [c for c, f in zip(cands, friends) if f >= 2]
+        np.fill_diagonal(S, -1)
+        nb = (S > 0.6).sum(1)
+        core = nb >= max(5, 0.08 * len(cands))
+        if core.any():
+            best_core = np.where(core[None, :], S, -1).max(1)
+            cands = [c for c, v in zip(cands, best_core) if v >= 0.6]
     return cands
 
 
@@ -350,15 +370,17 @@ def parse_scanned(qs_pdf: Path, exam_code: str, numbers: list[int], images_root:
         c = _crop(page, top - 1, end)
         if c is not None:
             parts.append(c)
-        # 次ページにまたがる問題（次の見出しより前にある本文的な行）
-        if not (nxt and nxt[0] == pi):
-            last_pi = nxt[0] if nxt else min(pi + 1, len(pages) - 1)
+        # 次ページにまたがる問題（次の見出しより前にある本文的な行）。最後の問題は対象外
+        # （後ろはメモ用紙・注意事項のページ）。
+        if nxt and nxt[0] != pi:
+            last_pi = nxt[0]
             for qi in range(pi + 1, last_pi + 1):
                 p2 = pages[qi]
                 lim = nxt[2] - 2 if (nxt and nxt[0] == qi) else p2.content_bottom + 1
                 pre = [b for b in p2.bands if b.y1 <= lim]
                 # 本文の字下げ位置（見出しより右、中央寄せのメモ欄等ではない）にある行だけを続きとみなす
-                if pre and all(hb.x0 + 0.5 * th <= b.x0 <= hb.x0 + 8 * th for b in pre[:1]):
+                if pre and all(hb.x0 + 0.5 * th <= b.x0 <= hb.x0 + 8 * th and 0.6 * th <= b.h <= 1.5 * th
+                               for b in pre[:1]):
                     c2 = _crop(p2, pre[0].y0, lim)
                     if c2 is not None:
                         parts.append(c2)
@@ -392,6 +414,7 @@ def parse_scanned(qs_pdf: Path, exam_code: str, numbers: list[int], images_root:
 # --------------------------------------------------------------------------
 
 RE_HEAD = re.compile(r"^問\s*([0-9０-９]{1,2})(?:\s+|(?=[^\d０-９]))")
+RE_TRAILER = re.compile(r"メモ用紙|注意事項|試験問題に記載されている|^〔?問題(冊子)?終わり")
 RE_FOOTER = re.compile(r"^[－\-–ー]\s*[0-9０-９]+\s*[－\-–ー]$")
 
 
@@ -406,15 +429,52 @@ class _Line:
     chars: list
 
 
+def _line_text(chars: list) -> str:
+    s = ""
+    prev = None
+    for c in chars:
+        if prev is not None:
+            gap = c["x0"] - prev["x1"]
+            ascii_pair = prev["text"].isascii() and c["text"].isascii()
+            if gap > (0.2 if ascii_pair else 0.45) * c["size"]:
+                s += " "
+        s += c["text"]
+        prev = c
+    return s
+
+
+RE_RUBY_TEXT = re.compile(r"^[ぁ-ゖ\s]{1,8}$")
+
+
 def _page_lines(page, pi: int) -> list[_Line]:
+    raw = page.extract_text_lines(layout=False, strip=True, return_chars=True)
+    sizes = [c["size"] for ln in raw for c in ln["chars"] if c["text"].strip()]
+    med = float(np.median(sizes)) if sizes else 10.0
     out = []
-    for ln in page.extract_text_lines(layout=False, strip=True, return_chars=True):
+    for ln in raw:
         t = ln["text"].strip()
         if not t or RE_FOOTER.match(t.replace(" ", "")):
             continue
-        out.append(_Line(pi, ln["top"], ln["bottom"], ln["x0"], ln["x1"], t,
-                         [c for c in ln["chars"] if c["text"].strip()]))
-    return out
+        chars = [c for c in ln["chars"] if c["text"].strip()]
+        # ルビ（ふりがな）だけの行は捨てる
+        if chars and RE_RUBY_TEXT.match(t) and max(c["size"] for c in chars) < 0.75 * med:
+            continue
+        out.append(_Line(pi, ln["top"], ln["bottom"], ln["x0"], ln["x1"], t, chars))
+    # 上付き/下付き文字だけの行（2^n の n 等）は最も近い通常行に併合する
+    merged: list[_Line] = []
+    small = [l for l in out if l.chars and max(c["size"] for c in l.chars) < 0.8 * med]
+    normal = [l for l in out if l not in small]
+    for l in small:
+        cy = (l.top + l.bottom) / 2
+        best = min(normal, key=lambda n: abs((n.top + n.bottom) / 2 - cy), default=None)
+        if best is not None and abs((best.top + best.bottom) / 2 - cy) <= 1.0 * med:
+            best.chars = sorted(best.chars + l.chars, key=lambda c: c["x0"])
+            best.text = _line_text(best.chars)
+            best.x0 = min(best.x0, l.x0); best.x1 = max(best.x1, l.x1)
+            best.top = min(best.top, l.top); best.bottom = max(best.bottom, l.bottom)
+        else:
+            merged.append(l)
+    return sorted(normal + merged, key=lambda l: (l.top, l.x0))
 
 
 def _join_lines(lines: list[_Line], right_edge: float, keep_breaks: bool = True) -> str:
@@ -426,7 +486,7 @@ def _join_lines(lines: list[_Line], right_edge: float, keep_breaks: bool = True)
             continue
         prev = lines[i - 1]
         size = float(np.median([c["size"] for c in prev.chars])) if prev.chars else 10
-        wrapped = prev.x1 >= right_edge - 1.5 * size and not prev.text.endswith("。")
+        wrapped = prev.x1 >= right_edge - 2.5 * size and not prev.text.endswith("。")
         if wrapped or not keep_breaks:
             a, b = buf[-1:], t[:1]
             sep = " " if (re.match(r"[A-Za-z0-9,.)]", a) and re.match(r"[A-Za-z0-9(]", b)) else ""
@@ -451,8 +511,11 @@ def _chars_text(chars: list) -> str:
         s = ""
         prev = None
         for c in ln:
-            if prev is not None and c["x0"] - prev["x1"] > 0.6 * c["size"]:
-                s += " "
+            if prev is not None:
+                gap = c["x0"] - prev["x1"]
+                ascii_pair = prev["text"].isascii() and c["text"].isascii()
+                if gap > (0.2 if ascii_pair else 0.6) * c["size"]:
+                    s += " "
             s += c["text"]
             prev = c
         parts.append(s.strip())
@@ -496,6 +559,26 @@ def _find_labels(region_lines: list[_Line]):
     return best
 
 
+def _cluster_boxes(boxes: list, pad: float = 4.0) -> list:
+    """重なる/近接する図形の bbox をまとめる（図・表の領域）。"""
+    cl = [list(b) for b in boxes]
+    changed = True
+    while changed:
+        changed = False
+        out = []
+        for b in cl:
+            for o in out:
+                if b[0] <= o[2] + pad and o[0] <= b[2] + pad and b[1] <= o[3] + pad and o[1] <= b[3] + pad:
+                    o[0] = min(o[0], b[0]); o[1] = min(o[1], b[1])
+                    o[2] = max(o[2], b[2]); o[3] = max(o[3], b[3])
+                    changed = True
+                    break
+            else:
+                out.append(b)
+        cl = out
+    return cl
+
+
 def _render_region(pdf_doc, segs, scale: float) -> Image.Image:
     """segs: [(page_index, x0, top, x1, bottom)] (PDF pt)"""
     ims = []
@@ -527,6 +610,7 @@ def parse_text_pdf(qs_pdf: Path, exam_code: str, numbers: list[int], images_root
             page_info[pi] = (page.width, page.height, graphics)
         if not all_lines:
             return [], [f"{exam_code}: テキストなし"]
+        page_clusters = {pi: _cluster_boxes(v[2]) for pi, v in page_info.items()}
         left_margin = min(l.x0 for l in all_lines if RE_HEAD.match(l.text)) if any(
             RE_HEAD.match(l.text) for l in all_lines) else 0
         heads = []
@@ -549,7 +633,11 @@ def parse_text_pdf(qs_pdf: Path, exam_code: str, numbers: list[int], images_root
             for k, (idx, n) in enumerate(heads):
                 end = heads[k + 1][0] if k + 1 < len(heads) else len(all_lines)
                 region = all_lines[idx:end]
-                # 最後の問題の後ろにある注意書き等を除外（次ページ以降で見出しより左/中央寄せの行）
+                # 最後の問題の後ろにあるメモ用紙・注意書き等を除外
+                for cut, l in enumerate(region):
+                    if cut and RE_TRAILER.search(l.text.replace(" ", "")):
+                        region = region[:cut]
+                        break
                 if k + 1 == len(heads):
                     region = [l for l in region if l.page <= region[0].page + 1]
                 for li, ln in enumerate(region):
@@ -607,7 +695,16 @@ def parse_text_pdf(qs_pdf: Path, exam_code: str, numbers: list[int], images_root
                                   _chars_text([dict(c, _line=0) for c in region0_chars]) if region0_chars else "",
                                   region0_chars)
                     bl[0] = first
-                body = _join_lines([l for l in bl if l.text], right_edge).strip()
+                # 図・表の枠の中にある文字は本文に入れない（画像で見せる）
+                def in_graphics(l: _Line) -> bool:
+                    cy = (l.top + l.bottom) / 2
+                    for g in page_clusters[l.page]:
+                        if g[1] - 3 <= cy <= g[3] + 3 and l.x0 >= g[0] - 6 and l.x1 <= g[2] + 6 \
+                                and (g[2] - g[0]) > 15 and (g[3] - g[1]) > 15:
+                            return True
+                    return False
+                fig_lines = [l for l in bl[1:] if in_graphics(l)]
+                body = _join_lines([l for l in bl if l.text and l not in fig_lines], right_edge).strip()
 
                 # 図・表・数式の検出 -> 画像化
                 segs = {}
@@ -632,7 +729,7 @@ def parse_text_pdf(qs_pdf: Path, exam_code: str, numbers: list[int], images_root
                 if sizes:
                     med = float(np.median(sizes))
                     small = sum(1 for s in sizes if s < 0.8 * med)
-                    if small >= 2:
+                    if small >= 1:
                         need_img.append("sub/superscript")
                 # 空白の多い行（表やプログラムをテキストで組んだもの）
                 if re.search(r"〔プログラム〕|〔擬似言語|〔表|表\s*$|^表\d|図\s*\d|図$", body, re.M):
