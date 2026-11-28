@@ -25,15 +25,31 @@ MENJO_PAGE_URL = BASE + "/shiken/about/menjo-fe.html"
 
 # 令和2〜4年度の免除試験（修了試験）: 年度ごとに 1 回分を過去問道場の 'NN_menjo' に割り当てる。
 # 過去問道場側がどの実施日を収録しているかは未検証（fe-siken.com にはアクセスしない方針のため）。
-# 各年度の 12 月実施回を採用する。
+# 02_menjo は 2020年6月14日実施回（ユーザー確認済み）。過去問道場の 02_menjo もこの回。
+# 03 は 6 月回と推定しているが未確認。04 は 6 月回の解答例 PDF が画像のみで正解を自動取得できないため、
+# 従来どおり 12 月回のまま据え置き。
 MENJO_PICK = {
-    "02_menjo": ("20201213", "令和2年度 免除試験",
-                 "令和2年度 基本情報技術者試験 科目A試験免除制度 修了試験（2020年12月13日実施）"),
-    "03_menjo": ("20211212", "令和3年度 免除試験",
-                 "令和3年度 基本情報技術者試験 科目A試験免除制度 修了試験（2021年12月12日実施）"),
+    "02_menjo": ("20200614", "令和2年度 免除試験",
+                 "令和2年度 基本情報技術者試験 科目A試験免除制度 修了試験（2020年6月14日実施）"),
+    "03_menjo": ("20210613", "令和3年度 免除試験",
+                 "令和3年度 基本情報技術者試験 科目A試験免除制度 修了試験（2021年6月13日実施）"),
     "04_menjo": ("20221211", "令和4年度 免除試験",
                  "令和4年度 基本情報技術者試験 科目A試験免除制度 修了試験（2022年12月11日実施）"),
 }
+
+
+def _verified_codes() -> frozenset:
+    codes = {f"{y}_{s}" for y in range(21, 32) for s in ("haru", "aki")}
+    codes.discard("31_aki")  # 平成31年に秋期はない（令和元年秋は 01_aki）
+    codes.add("01_aki")
+    # 02_menjo はユーザー確認済み（2020-06-14 回、問49）。03/04_menjo は未確認のため含めない。
+    codes.add("02_menjo")
+    return frozenset(codes)
+
+
+# 過去問道場の問番号と IPA の問番号が一致すると確認できた回だけ解説リンクを付ける。
+# 免除試験は 02_menjo のみ確認済み。03/04_menjo・サンプル・23_toku・令和5年以降の公開問題は未確認のためリンクなし。
+VERIFIED_EXPLANATION_CODES = _verified_codes()
 
 
 @dataclass
@@ -54,6 +70,8 @@ class Exam:
         return "mock" if self.code[:3] in ("05_", "06_", "07_", "08_") else "study"
 
     def explanation_url(self, n: int) -> str:
+        if self.code not in VERIFIED_EXPLANATION_CODES:
+            return ""
         return f"https://www.fe-siken.com/kakomon/{self.code}/q{n}.html"
 
 

@@ -217,3 +217,54 @@ def test_parse_text_pdf_r5(tmp_path):
         assert all(c["text"] for c in q.choices), q.number
     # 最後の問題に「メモ用紙」が混入しない
     assert "メモ" not in questions[-1].choices[-1]["text"]
+
+
+def test_verified_explanation_codes():
+    from importer.ipa_fetch import VERIFIED_EXPLANATION_CODES as V, Exam
+    assert "21_haru" in V and "30_aki" in V and "31_haru" in V and "01_aki" in V
+    assert "31_aki" not in V
+    assert "02_menjo" in V
+    for c in ("03_menjo", "04_menjo", "23_toku", "sample", "05_haru", "08_haru"):
+        assert c not in V
+    mk = lambda c: Exam(c, "x", "am", "", "", "")
+    assert mk("31_haru").explanation_url(3) == "https://www.fe-siken.com/kakomon/31_haru/q3.html"
+    assert mk("02_menjo").explanation_url(49) == "https://www.fe-siken.com/kakomon/02_menjo/q49.html"
+    assert mk("03_menjo").explanation_url(3) == ""
+    assert mk("04_menjo").explanation_url(3) == ""
+
+
+def test_menjo_pick_dates():
+    from importer.ipa_fetch import MENJO_PICK
+    assert MENJO_PICK["02_menjo"][0] == "20200614"
+    assert MENJO_PICK["03_menjo"][0] == "20210613"
+    assert MENJO_PICK["04_menjo"][0] == "20221211"  # 据え置き（6月回の解答例は画像のみ）
+    assert "2020年6月14日実施" in MENJO_PICK["02_menjo"][2]
+
+
+def test_fix_links_clears_and_fills_idempotently(tmp_path):
+    import sqlite3
+    from importer.fix_links import fix
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE questions (id TEXT PRIMARY KEY, part TEXT, exam_code TEXT, number INTEGER, explanation_url TEXT)")
+    rows = [
+        ("a", "A", "02_menjo", 49, ""),              # 許可リスト内・空 → 埋める
+        ("b", "A", "03_menjo", 3, "https://x/old"),  # 許可リスト外・リンクあり → 消す
+        ("c", "A", "03_menjo", 4, ""),               # 許可リスト外・空 → そのまま
+        ("d", "B", "02_menjo", 1, ""),               # 科目B → 触らない
+    ]
+    conn.executemany("INSERT INTO questions VALUES (?,?,?,?,?)", rows)
+    conn.commit()
+    conn.close()
+
+    res = fix(db)
+    assert res["cleared"] == {"03_menjo": 1}
+    assert res["filled"] == {"02_menjo": 1}
+    got = dict(sqlite3.connect(db).execute("SELECT id, explanation_url FROM questions").fetchall())
+    assert got == {
+        "a": "https://www.fe-siken.com/kakomon/02_menjo/q49.html",
+        "b": "", "c": "", "d": "",
+    }
+
+    res2 = fix(db)  # 2回目は何も変わらない
+    assert res2["cleared"] == {} and res2["filled"] == {}
