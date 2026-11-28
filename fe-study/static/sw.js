@@ -1,7 +1,7 @@
 // FE Study Service Worker: アプリ画面（シェル）をキャッシュし、電波が切れても起動できるようにする。
 // すべて相対 URL（サブパス /fe/ でもサーバー版 / でも動く）。/api/ と packs/*.zip はキャッシュしない
 // （パックは IndexedDB に入る。回答のオフライン保存はサーバー版では app.js の送信キューが担当）。
-const CACHE = 'fe-study-v4';
+const CACHE = 'fe-study-v5';
 const SHELL = ['./', 'index.html', 'static/app.js', 'static/app.css',
                'static/local/logic.js', 'static/local/store.js', 'static/local/api-local.js',
                'static/local/pack.js', 'static/local/backup.js',

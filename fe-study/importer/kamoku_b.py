@@ -4,6 +4,7 @@
     python -m importer.kamoku_b                       # data/kamoku_b_src の PDF を data/fe.db に UPSERT
     python -m importer.kamoku_b --src DIR --db PATH   # 入力ディレクトリ・DB を指定
     python -m importer.kamoku_b --offline             # IPA 解答例 PDF をキャッシュからのみ読む
+    python -m importer.audit_b                        # 画像と問の対応を全件監査（取り込みの最後にも自動で実行）
 
 入力（data/kamoku_b_src/、git 管理外）:
   IPA 問題冊子 3 冊（サンプル20問・令和5年6問・令和6年6問）と、翔泳社『出るとこだけ！基本情報技術者［科目B］
@@ -13,6 +14,7 @@
   - questions 行（part='B'。id は feb-{src}-q{NN}[-{sub}]）。既存の科目A の行には触れない。
   - 問題画像 data/images/b/{exam_code}/q{NN}[-sub]_{k}.png（共通問題文は q{NN}_stem_{k}.png）
   - 解説画像 data/images/b/expl/{exam_code}/q{NN}_{k}.png（書籍付録の該当ページの切り抜き。ローカル利用のみ）
+  - data/images/b/manifest.json（各画像の元 PDF・論理ページ・y 範囲・sha1。importer/audit_b.py が使う）
 
 正解: IPA 3 冊は IPA 解答例 PDF（www.ipa.go.jp、http_cache 経由で 1 秒以上間隔・キャッシュ）と書籍の表を
 照合する。付録の問題は付録の表／解説見出しの「問N：ア」から取る。
@@ -39,6 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent  # fe-study/
 sys.path.insert(0, str(ROOT))
 
 from . import http_cache  # noqa: E402
+from . import kamoku_b_pdf as kbp  # noqa: E402
 from .kamoku_b_pdf import (LABELS10, Doc, Header, Seg, nfkc, parse_choices,  # noqa: E402
                            save_segs)
 
@@ -309,6 +312,24 @@ def parse_furoku_table(doc: Doc, rep: Report, tag: str) -> dict:
     return res
 
 
+def start_page_ok(doc: Doc, h: Header, page: int | None) -> bool:
+    """見出しのページが表のページと合っているか。見出しが前のページの下端（下 1/4）にあり本文が表のページから
+    始まる場合（令和4年サンプル問18 の p.57 下端など）も、書籍の表は本文のページを載せているので一致とみなす。"""
+    if page is None or h.lp == page:
+        return True
+    return h.lp == page - 1 and h.char_top > doc.lp(h.lp).footer_top * 0.75
+
+
+def furoku_orig_numbers(table: dict) -> dict:
+    """付録の表の出典「…問49」-> 付録の問番号 {49: 1, ...}（付録4 の重ね文字の見出しの解決に使う）。"""
+    out = {}
+    for n, v in table.items():
+        m = re.search(r"問\s*(\d+)\s*$", nfkc(v["source"]))
+        if m:
+            out[int(m.group(1))] = n
+    return out
+
+
 def header_answer(h: Header) -> str | None:
     t = nfkc(h.line_text).replace(" ", "").replace("\u2009", "")
     # 「問1:カ」「:問17カ」「問:20カ」（重ね順の崩れ）「問1イやさしい」（令和6年版の帯見出し）
@@ -333,19 +354,54 @@ def parse_sub_answers(h: Header) -> dict:
     return {"kind": "single", "answer": m.group(1) if m else None}
 
 
-def explanation_regions(doc: Doc, first_lp: int, expected: list[int], rep: Report, tag: str) -> dict:
-    """解説部の「問N」見出しから {問番号: (Header, [Seg])}。番号は読めれば読んだ値、読めなければ出現順。"""
-    hs = doc.book_headers(range(first_lp, len(doc) + 1))
+def resolve_header_numbers(hs: list[Header], expected: list[int], orig: dict | None = None) -> list:
+    """バッジ見出しの番号を表の問番号に解決する（解決できないものは None）。
+
+    付録4 のバッジは出典の番号（問49 等）と付録の番号（問1）が重ね描きされていて、テキストでは数字が
+    混ざって「419」「5191」と取れるか、隠れた方の「問56」だけが取れる。orig（出典の問番号 -> 付録の問番号）
+    を使い、数字の並べ替えが「付録の番号＋出典の番号」と一致するものに解決する。"""
+    exp = set(expected)
+    orig = orig or {}
+    rev = {v: k for k, v in orig.items()}
+    out = []
+    for h in hs:
+        n = None
+        if h.num in exp:
+            n = h.num
+        elif h.num is not None and h.num in orig:
+            n = orig[h.num]
+        elif h.digits:
+            key = sorted(h.digits)
+            hit = [k for k in exp if sorted(str(k) + str(rev.get(k, ""))) == key]
+            n = hit[0] if len(hit) == 1 else None
+        out.append(n)
+    return out
+
+
+def numbered_headers(hs: list[Header], expected: list[int], orig: dict | None, rep: Report, tag: str) -> list:
+    """[(問番号, Header)]。番号が全部読めて重複が無く昇順ならそれを使い、そうでなければ出現順で割り当てて警告する
+    （出現順の割り当ては見出しを 1 つ取りこぼすと以降が全部ずれるため、最後の手段）。"""
+    nums = resolve_header_numbers(hs, expected, orig)
     if len(hs) != len(expected):
-        rep.warn(f"{tag}: 解説見出し {len(hs)} 個（期待 {len(expected)}）")
-    nums = [h.num for h in hs]
-    use_parsed = all(nums) and sorted(nums) == sorted(expected[:len(nums)]) and len(set(nums)) == len(nums)
+        rep.warn(f"{tag}: 見出し {len(hs)} 個（期待 {len(expected)}）")
+    if None not in nums and len(set(nums)) == len(nums) and nums == sorted(nums):
+        missing = sorted(set(expected) - set(nums))
+        if missing:
+            rep.warn(f"{tag}: 問{missing} の見出しが見つからない")
+        return list(zip(nums, hs))
+    rep.warn(f"{tag}: 見出しの番号が読めない（{nums}）。出現順で割り当てる")
+    return [(expected[i], h) for i, h in enumerate(hs) if i < len(expected)]
+
+
+def explanation_regions(doc: Doc, first_lp: int, expected: list[int], rep: Report, tag: str,
+                        orig: dict | None = None) -> dict:
+    """解説部の「問N」見出しから {問番号: (Header, [Seg])}。各問の領域は次の見出しの直前まで。"""
+    hs = doc.book_headers(range(first_lp, len(doc) + 1))
+    numbered = numbered_headers(hs, expected, orig, rep, tag)
     out = {}
-    for i, h in enumerate(hs):
-        n = h.num if use_parsed else (expected[i] if i < len(expected) else None)
-        if n is None:
-            continue
-        end = (hs[i + 1].lp, hs[i + 1].top) if i + 1 < len(hs) else None
+    for i, (n, h) in enumerate(numbered):
+        k = hs.index(h)
+        end = (hs[k + 1].lp, hs[k + 1].top) if k + 1 < len(hs) else None
         out[n] = (h, doc.region((h.lp, h.top), end, len(doc)))
     return out
 
@@ -430,7 +486,7 @@ def build_ipa(src: IpaSource, src_dir: Path, images_root: Path, rep: Report) -> 
             ex_imgs = None
             if n in expl:
                 ex_imgs = save_segs(bdoc, expl[n][1], images_root, f"b/expl/{src.code}/q{n:02d}", SCALE_EXPL)
-                if expl[n][0].lp != b.get("page"):
+                if not start_page_ok(bdoc, expl[n][0], b.get("page")):
                     rep.warn(f"{src.code} 問{n}: 解説の開始ページ {expl[n][0].lp} が表の p.{b.get('page')} と違う")
             elif book_path:
                 conf -= 0.1
@@ -493,16 +549,14 @@ def build_furoku(code: str, fno: int, path: Path, images_root: Path, rep: Report
         if not table:
             return []
         nums = sorted(table)
+        orig = furoku_orig_numbers(table)
         expl_start = min(v["epage"] for v in table.values())
         ph = doc.book_headers(range(2, expl_start))
-        if len(ph) != len(nums):
-            rep.warn(f"{code}: 問題見出し {len(ph)} 個（表は {len(nums)} 問）")
-        expl = explanation_regions(doc, expl_start, nums, rep, f"{code} 解説")
+        pnum = numbered_headers(ph, nums, orig, rep, f"{code} 問題")
+        expl = explanation_regions(doc, expl_start, nums, rep, f"{code} 解説", orig)
         ex_source = f"{BOOK_TITLE}付録{fno}"
-        for i, h in enumerate(ph):
-            if i >= len(nums):
-                break
-            n = nums[i]
+        for n, h in pnum:
+            i = ph.index(h)
             t = table[n]
             if h.lp != t["qpage"]:
                 rep.warn(f"{code} 問{n}: 問題の開始ページ {h.lp} が表の p.{t['qpage']} と違う")
@@ -556,7 +610,7 @@ def build_furoku(code: str, fno: int, path: Path, images_root: Path, rep: Report
                         source_label=src_label, source_url=BOOK_URL,
                         explanation_images=ex_imgs or None, explanation_source=ex_source if ex_imgs else None,
                         origin="furoku")
-            if eh is not None and eh.lp != t["epage"]:
+            if eh is not None and not start_page_ok(doc, eh, t["epage"]):
                 rep.warn(f"{code} 問{n}: 解説の開始ページ {eh.lp} が表の p.{t['epage']} と違う")
 
             sa = parse_sub_answers(eh) if eh else {"kind": "single", "answer": None}
@@ -728,6 +782,7 @@ def import_all(src_dir: Path, images_root: Path, rep: Report) -> list[Item]:
     b_dir = images_root / "b"
     if b_dir.exists():
         shutil.rmtree(b_dir)  # 科目B の画像は毎回作り直す（古い枚数のファイルを残さない）
+    kbp.MANIFEST.clear()
     items: list[Item] = []
     existing: dict[str, Item] = {}
     for src in IPA_SOURCES:
@@ -748,6 +803,11 @@ def import_all(src_dir: Path, images_root: Path, rep: Report) -> list[Item]:
             existing[it.id] = it
         items += its
         print(f"[OK] {code:<8} 付録{fno:<10} {len(its):>3}問  {time.time() - t:5.1f}s", flush=True)
+    # 画像の元領域（PDF・論理ページ・y 範囲）。importer/audit_b.py が対応ずれの検査に使う
+    used = {p for it in items for p in list(it.images) + list(it.explanation_images or [])}
+    man = {k: v for k, v in sorted(kbp.MANIFEST.items()) if k in used}
+    b_dir.mkdir(parents=True, exist_ok=True)
+    (b_dir / "manifest.json").write_text(json.dumps(man, ensure_ascii=False, indent=0), encoding="utf-8")
     return items
 
 
@@ -758,6 +818,7 @@ def main(argv=None) -> int:
     ap.add_argument("--db", default=str(DEFAULT_DB), help="SQLite DB（既定 data/fe.db）")
     ap.add_argument("--images", default=str(IMAGES_DIR), help="画像の出力先（既定 data/images）")
     ap.add_argument("--offline", action="store_true", help="IPA 解答例 PDF をキャッシュからのみ読む")
+    ap.add_argument("--no-audit", action="store_true", help="取り込み後の画像対応の監査（audit_b）を省く")
     a = ap.parse_args(argv)
     if a.offline:
         http_cache.OFFLINE = True
@@ -816,6 +877,14 @@ def main(argv=None) -> int:
         for w in rep.warnings:
             print("  ", w)
     print("\nDB 全体（part/pool 別）:", res["totals"])
+    if not a.no_audit:
+        # 画像が正しい問に対応しているか（importer/audit_b.py）。NG の詳細は python -m importer.audit_b で見る
+        from .audit_b import audit
+        results = audit(Path(a.db), Path(a.images), src_dir)
+        ng = [r for r in results if not r.ok]
+        print(f"\n画像の対応の監査: {len(results)} 問中 NG {len(ng)}")
+        for r in ng:
+            print(f"   {r.id}: {' / '.join(r.reasons)}")
     return 0
 
 

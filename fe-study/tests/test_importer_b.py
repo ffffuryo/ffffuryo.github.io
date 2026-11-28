@@ -250,3 +250,99 @@ def test_duplicates_merged(imported):
             "feb-sample-q20"} <= targets
     ids = {r["id"] for r in imported["rows"]}
     assert not {"feb-furoku2-q04", "feb-furoku2-q05", "feb-furoku2-q08"} & ids
+
+
+# ---------------------------------------------------------------- 画像と問の対応（importer/audit_b.py）
+
+def test_resolve_header_numbers_overlay():
+    """付録4 の重ね文字（出典の問49 と付録の問1 が重ねて描かれ、数字が混ざって取れる）を表の番号に解決する。"""
+    orig = {48 + k: k for k in range(1, 13)}  # 出典の問49..60 -> 付録の問1..12
+    hs = [Header(1, 0, 0, 0, None, "", "419"), Header(2, 0, 0, 0, None, "", "5191"),
+          Header(3, 0, 0, 0, 56, "", "56"), Header(4, 0, 0, 0, 12, "", "12"), Header(5, 0, 0, 0, None, "", "999")]
+    assert kb.resolve_header_numbers(hs, list(range(1, 13)), orig) == [1, 11, 8, 12, None]
+    # 番号が読めないものがあれば出現順で割り当て、警告する
+    rep = kb.Report()
+    rep.warn = rep.warnings.append
+    got = kb.numbered_headers(hs[:2] + [Header(6, 0, 0, 0, None, "", "")], [1, 2, 3], orig, rep, "t")
+    assert [n for n, _ in got] == [1, 2, 3] and rep.warnings
+
+
+def test_audit_heading_answer():
+    from importer.audit_b import expected_answer_from_heading as ea
+    assert ea("問1：カ", None) == "カ"
+    assert ea("：問17カ", None) == "カ"
+    assert ea("問：20カ", None) == "カ"
+    assert ea("問1イやさしい", None) == "イ"
+    assert ea("問問4１9：イ", None) == "イ"
+    assert ea("問2（2）：イ （3）：エ", "設問3(3)") == "エ"
+    assert ea("問9 c：エ d，e：ウ，オ（順不同） f：イ", "設問2(1) f") == "イ"
+    assert ea("問9 c：エ d，e：ウ，オ（順不同） f：イ", "設問2(1) c") == "エ"
+
+
+@pytest.fixture(scope="module")
+def audited(imported):
+    from importer import audit_b
+    aud = audit_b.Auditor(SRC, imported["images"])
+    yield aud, {r.id: r for r in aud.run(imported["rows"])}
+    aud.close()
+
+
+@needs_pdf
+def test_manifest_covers_all_images(imported, audited):
+    aud, _ = audited
+    for r in imported["rows"]:
+        for p in json.loads(r["images"]) + json.loads(r["explanation_images"] or "[]"):
+            assert p in aud.manifest, p
+
+
+@needs_pdf
+def test_audit_no_ng(audited):
+    _, res = audited
+    ng = {k: v.reasons for k, v in res.items() if not v.ok}
+    assert ng == {}
+
+
+@needs_pdf
+def test_explanation_matches_question(imported, audited):
+    """全 B 問題で: 解説の先頭画像は期待する問の見出しから始まり、その見出しの正解記号が answer と一致し、
+    解説画像に他の問の見出しが入っていない。問題画像も先頭が同じ問番号で、他の問が入っていない。"""
+    from importer.audit_b import expected_answer_from_heading
+    aud, _ = audited
+    for r in imported["rows"]:
+        ex = json.loads(r["explanation_images"] or "[]")
+        regs = [aud.manifest[p] for p in ex]
+        cands = aud.expected_expl(r)
+        assert ex and cands, r["id"]
+        assert len({m["pdf"] for m in regs}) == 1
+        pdf = regs[0]["pdf"]
+        want = [n for f, n in cands if f == pdf]
+        assert want, (r["id"], pdf, cands)
+        s = aud.src(pdf)
+        heads = [h for m in regs for h in s.heads_in(m["lp"], m["y0"], m["y1"])]
+        assert heads and heads[0].n == want[0], (r["id"], [h.n for h in heads])
+        assert {h.n for h in heads} == {want[0]}, (r["id"], [h.n for h in heads])
+        first = s.heads_in(regs[0]["lp"], regs[0]["y0"], regs[0]["y1"])
+        assert first and first[0] is heads[0], r["id"]
+        assert expected_answer_from_heading(heads[0].text, r["sub_label"]) == r["answer"], r["id"]
+        if r["exam_code"] in IPA_ANSWERS:  # IPA の問は同じ回の書籍解説の同じ番号
+            assert pdf == aud.book_pdf[r["exam_code"]] and want[0] == r["number"], r["id"]
+        # 問題画像
+        q = [aud.manifest[p] for p in json.loads(r["images"])]
+        qs = aud.src(q[0]["pdf"])
+        qh = [h for m in q for h in qs.heads_in(m["lp"], m["y0"], m["y1"])]
+        assert qh and qh[0].n == r["number"] and {h.n for h in qh} == {r["number"]}, r["id"]
+
+
+@needs_pdf
+def test_audit_detects_swapped_explanations(imported, audited):
+    """監査が対応ずれを検出できること（2 問の解説画像を入れ替えると両方 NG）。"""
+    aud, _ = audited
+    rows = {r["id"]: dict(r) for r in imported["rows"]}
+    a, b = rows["feb-sample-q05"], rows["feb-sample-q06"]
+    a["explanation_images"], b["explanation_images"] = b["explanation_images"], a["explanation_images"]
+    c = rows["feb-sample-q10"]
+    c["explanation_images"] = json.dumps(json.loads(c["explanation_images"])[:-1])  # 末尾を欠く
+    res = {x.id: x for x in aud.run([a, b, c])}
+    assert not res["feb-sample-q05"].ok and not res["feb-sample-q06"].ok
+    assert any("見出し" in m for m in res["feb-sample-q05"].reasons)
+    assert not res["feb-sample-q10"].ok and any("欠けている" in m for m in res["feb-sample-q10"].reasons)

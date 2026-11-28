@@ -50,7 +50,7 @@ def create_app(db_path=None):
 
     @app.route("/media/<path:filename>")
     def media(filename):
-        return send_from_directory(app.config["IMAGES_DIR"], filename, max_age=86400)
+        return send_from_directory(app.config["IMAGES_DIR"], filename, max_age=300)  # 取り込み直しで画像が変わっても古いものが残らないよう短め
 
     @app.after_request
     def no_store(resp):

@@ -95,6 +95,7 @@ class Header:
     x0: float
     num: int | None     # 読み取れた番号（書籍の重ね文字などで読めない場合 None）
     line_text: str      # 見出し行の文字列（「問2（2）：イ （3）：イ」など）
+    digits: str = ""    # バッジの数字列そのまま（付録4 の重ね文字は「419」= 問49 と 問1 が混ざる）
 
 
 class Doc:
@@ -282,7 +283,7 @@ class Doc:
                 line_chars = sorted([c for c in P.chars if abs((c["top"] + c["bottom"]) / 2 - cy) < 5
                                      and c["x0"] >= ch["x0"] - 30], key=lambda c: c["x0"])
                 out.append(Header(no, top - 3, ch["top"], ch["x0"], num,
-                                  "".join(c["text"] for c in line_chars)))
+                                  "".join(c["text"] for c in line_chars), digits))
         out.sort(key=lambda h: (h.lp, h.top))
         return out
 
@@ -374,11 +375,17 @@ def _chars_join(chars: list) -> str:
 # 画像保存
 # --------------------------------------------------------------------------
 
+# 保存した画像の元領域 {rel: {"pdf", "lp", "y0", "y1", "sha1"}}。kamoku_b.import_all が
+# data/images/b/manifest.json に書き出し、importer/audit_b.py が問題・解説との対応を検査するのに使う。
+MANIFEST: dict = {}
+
+
 def save_segs(doc: Doc, segs: list[Seg], images_root: Path, rel_prefix: str, scale: float,
               start_k: int = 1) -> list[str]:
     """Seg ごとに PNG を保存し、data/images 相対パスのリストを返す。
 
     rel_prefix 例 'b/sample/q01' -> b/sample/q01_1.png, q01_2.png ...（インクの無い Seg は捨てる）"""
+    import hashlib
     out = []
     k = start_k
     for s in segs:
@@ -391,6 +398,8 @@ def save_segs(doc: Doc, segs: list[Seg], images_root: Path, rel_prefix: str, sca
             continue
         rel = f"{rel_prefix}_{k}.png"
         _save_png(img, images_root / rel)
+        MANIFEST[rel] = {"pdf": doc.path.name, "lp": s.lp, "y0": round(s.y0, 2), "y1": round(s.y1, 2),
+                         "sha1": hashlib.sha1((images_root / rel).read_bytes()).hexdigest()}
         out.append(rel)
         k += 1
     return out

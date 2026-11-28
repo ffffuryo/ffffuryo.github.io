@@ -503,7 +503,7 @@
   }
   // 書籍解説ビューア（回答後・結果・単問詳細から）
   let explSeq = 0;
-  async function openExplanation(qid, urls, source) {
+  async function openExplanation(qid, urls, source, note) {
     const seq = ++explSeq; // 取得待ちの間に別の解説ボタンが押されたら、古い方は開かない
     if (!urls || !urls.length) {
       try {
@@ -514,10 +514,15 @@
       } catch (e) { toast(e instanceof NetError ? 'オフラインのため解説を取得できません' : e.message); return; }
     }
     if (!urls || !urls.length) { toast('この問題の解説画像はありません'); return; }
-    openViewer(urls, { title: source || '解説（書籍付録）', alt: '解説' });
+    // 複数設問の問は「問全体の解説」を共有するため、どの小問の解説から始まっても正しい旨を明示する
+    const title = (source || '解説（書籍付録）') + (note ? `｜${note}` : '');
+    openViewer(urls, { title, alt: '解説' });
   }
-  const explBtn = (qid, urls, source, has) => ((urls && urls.length) || has
-    ? h('button', { class: 'btn link', type: 'button', onclick: () => openExplanation(qid, urls, source), text: '解説を見る（書籍付録）' }) : null);
+  const sharedNote = (q) => (q && q.group_id && q.sub_label
+    ? `この解説は問全体（全設問共通）です。${q.sub_label} は解説中の該当する設問の見出しを参照` : null);
+  const explBtn = (qid, urls, source, has, q) => ((urls && urls.length) || has
+    ? h('button', { class: 'btn link', type: 'button', onclick: () => openExplanation(qid, urls, source, sharedNote(q)),
+      text: q && q.group_id && q.sub_label ? '解説を見る（書籍付録・問全体）' : '解説を見る（書籍付録）' }) : null);
 
   function tick() {
     const Q = S.quiz;
@@ -564,7 +569,7 @@
     if (!att) return;
 
     {
-      const book = explBtn(q.id, att.explanation_image_urls, att.explanation_source, q.has_book_explanation);
+      const book = explBtn(q.id, att.explanation_image_urls, att.explanation_source, q.has_book_explanation, q);
       const link = q.explanation_url ? h('a', { class: 'btn link', href: q.explanation_url, target: '_blank', rel: 'noopener', text: '過去問道場で解説を見る ↗' }) : null;
       if (att.pending) {
         fb.append(h('div', { class: 'fb pending' },
@@ -769,7 +774,7 @@
     const rows = (r.questions || []).map((q, i) => {
       const x = qres(q);
       const cls = x.chosen == null ? '' : x.correct ? 'ok' : 'ng';
-      const book = explBtn(q.id, x.expl, x.explSrc, q.has_book_explanation);
+      const book = explBtn(q.id, x.expl, x.explSrc, q.has_book_explanation, q);
       if (book) book.classList.add('small');
       return h('li', { class: book ? 'withexp' : null }, h('button', { class: `qrow2 ${cls}`, type: 'button', onclick: () => go(`#/q/${encodeURIComponent(q.id)}`) },
         h('span', { class: 'mk', 'aria-label': x.chosen == null ? '未回答' : x.correct ? '正解' : '不正解' }, x.chosen == null ? icon('dash') : icon(x.correct ? 'check' : 'x')),
@@ -1028,7 +1033,7 @@
       d.part === 'B' ? bImages(d, false)
         : (d.image_url ? h('button', { class: 'figure', type: 'button', 'aria-label': '図を拡大して表示', onclick: () => openViewer(d.image_url) }, h('img', { src: d.image_url, alt: '問題の図・表' })) : null),
       choices,
-      explBtn(d.id, d.explanation_image_urls, d.explanation_source, false),
+      explBtn(d.id, d.explanation_image_urls, d.explanation_source, false, d),
       d.explanation_url ? h('a', { class: 'btn link', href: d.explanation_url, target: '_blank', rel: 'noopener', text: '過去問道場で解説を見る ↗' }) : null,
       h('p', { class: 'qsource', text: d.source_label || '' }),
       attRows.length ? h('section', null, h('div', { class: 'section-title', text: '回答履歴' }), h('ul', { class: 'card list', style: { gap: 0 } }, attRows)) : null));
