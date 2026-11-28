@@ -36,6 +36,18 @@ MENJO_PICK = {
 }
 
 
+def _verified_codes() -> frozenset:
+    codes = {f"{y}_{s}" for y in range(21, 32) for s in ("haru", "aki")}
+    codes.discard("31_aki")  # 平成31年に秋期はない（令和元年秋は 01_aki）
+    codes.add("01_aki")
+    return frozenset(codes)
+
+
+# 過去問道場の問番号と IPA の問番号が一致すると確認できた回だけ解説リンクを付ける。
+# 免除試験・サンプル・23_toku・令和5年以降の公開問題は未確認のためリンクなし。
+VERIFIED_EXPLANATION_CODES = _verified_codes()
+
+
 @dataclass
 class Exam:
     code: str            # 過去問道場の回コード
@@ -54,6 +66,8 @@ class Exam:
         return "mock" if self.code[:3] in ("05_", "06_", "07_", "08_") else "study"
 
     def explanation_url(self, n: int) -> str:
+        if self.code not in VERIFIED_EXPLANATION_CODES:
+            return ""
         return f"https://www.fe-siken.com/kakomon/{self.code}/q{n}.html"
 
 

@@ -233,3 +233,31 @@ test('B の優先: 同日誤答でも size=6 なら全グループが入る', as
   assert.equal(new Set(gids(await sessB(env, { size: 6 }))).size, 6);
   assert.equal(new Set(gids(await sessB(env, { size: 2 }))).size, 2);
 });
+
+test('解説 URL は問題ごとに正しく切り替わる（回答・セッション・単問・結果で一致）', async () => {
+  const env = await makeEnv();
+  const { api } = env;
+  const s = await sessB(env, { size: 6 });
+  const ids = s.questions.map((q) => q.id);
+  const expected = (id) => [`/media/bx/${id}-e1.png`];
+  const want = {};
+  for (const id of ids) {
+    const d = await api('GET', `/api/questions/${id}`);
+    want[id] = d.explanation_image_urls; // 未開示なら undefined
+  }
+  const seen = new Set();
+  for (const q of s.questions) {
+    const r = await api('POST', `/api/sessions/${s.id}/answer`, { question_id: q.id, chosen: 'ア', time_ms: 1000 });
+    if (q.has_book_explanation) {
+      assert.deepEqual(r.explanation_image_urls, expected(q.id));
+      seen.add(r.explanation_image_urls[0]);
+    }
+    const d = await api('GET', `/api/questions/${q.id}`);
+    assert.deepEqual(d.explanation_image_urls, r.explanation_image_urls);
+  }
+  assert.ok(seen.size >= 2, '複数の問題で別々の解説 URL');
+  const f = await api('POST', `/api/sessions/${s.id}/finish`);
+  for (const q of f.questions) {
+    assert.deepEqual(q.attempt.explanation_image_urls, q.has_book_explanation ? expected(q.id) : []);
+  }
+});

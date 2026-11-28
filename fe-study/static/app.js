@@ -502,10 +502,14 @@
     return out;
   }
   // 書籍解説ビューア（回答後・結果・単問詳細から）
+  let explSeq = 0;
   async function openExplanation(qid, urls, source) {
+    const seq = ++explSeq; // 取得待ちの間に別の解説ボタンが押されたら、古い方は開かない
     if (!urls || !urls.length) {
       try {
         const d = await api('GET', `/api/questions/${encodeURIComponent(qid)}`);
+        if (seq !== explSeq) return;
+        if (d.id != null && d.id !== qid) return; // 別の問題の応答は使わない
         urls = d.explanation_image_urls; source = d.explanation_source;
       } catch (e) { toast(e instanceof NetError ? 'オフラインのため解説を取得できません' : e.message); return; }
     }
@@ -693,11 +697,12 @@
       im.addEventListener('click', () => sc.classList.toggle('zoom'));
       return im;
     }));
-    sc.classList.remove('zoom'); sc.scrollTop = 0;
+    sc.classList.remove('zoom');
     const ti = $('#viewer-title');
     ti.textContent = opts.title || ''; ti.hidden = !opts.title;
     $('#viewer').setAttribute('aria-label', opts.title ? '解説の表示' : '図の拡大表示');
     v.hidden = false; document.body.classList.add('noscroll');
+    sc.scrollTop = 0; // 表示後に先頭へ（非表示中は効かないため）
     history.pushState({ viewer: 1 }, '', location.href);
     $('#viewer-close').focus();
   }
@@ -705,6 +710,7 @@
     const v = $('#viewer');
     if (v.hidden) return;
     v.hidden = true; document.body.classList.remove('noscroll');
+    $('#viewer-imgs').replaceChildren();
   }
   function closeViewer() {
     if (history.state && history.state.viewer) history.back(); else hideViewer();

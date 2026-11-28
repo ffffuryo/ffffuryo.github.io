@@ -217,3 +217,14 @@ def test_parse_text_pdf_r5(tmp_path):
         assert all(c["text"] for c in q.choices), q.number
     # 最後の問題に「メモ用紙」が混入しない
     assert "メモ" not in questions[-1].choices[-1]["text"]
+
+
+def test_verified_explanation_codes():
+    from importer.ipa_fetch import VERIFIED_EXPLANATION_CODES as V, Exam
+    assert "21_haru" in V and "30_aki" in V and "31_haru" in V and "01_aki" in V
+    assert "31_aki" not in V
+    for c in ("23_toku", "02_menjo", "03_menjo", "04_menjo", "sample", "05_haru", "08_haru"):
+        assert c not in V
+    mk = lambda c: Exam(c, "x", "am", "", "", "")
+    assert mk("31_haru").explanation_url(3) == "https://www.fe-siken.com/kakomon/31_haru/q3.html"
+    assert mk("02_menjo").explanation_url(3) == ""
